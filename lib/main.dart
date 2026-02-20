@@ -1,0 +1,67 @@
+import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
+import 'dart:io';
+import './screens/home.dart';
+import './screens/welcome_screen.dart';
+import './screens/login_screen.dart';
+import 'network/mqtt.dart';
+import 'database/db_helper.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Database in background
+  DatabaseHelper.instance.database.then((db) {
+    DatabaseHelper.instance.seedData();
+  });
+
+  // Set window size for Desktop platforms ONLY
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(400, 800),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.normal,
+      title: "Employee Tracker",
+    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+      await windowManager.setResizable(false);
+    });
+  }
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Employee Tracker',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, primary: Colors.blue[800]!),
+        useMaterial3: true,
+        fontFamily: 'Roboto',
+      ),
+      initialRoute: WelcomeScreen.id,
+      routes: {
+        WelcomeScreen.id: (context) => const WelcomeScreen(),
+        LoginScreen.id: (context) => const LoginScreen(),
+      },
+      onGenerateRoute: (settings) {
+        if (settings.name == HomePage.id) {
+          return MaterialPageRoute(
+            builder: (context) => HomePage(mqttClient: MQTTClientWrapper()),
+          );
+        }
+        return null;
+      },
+    );
+  }
+}

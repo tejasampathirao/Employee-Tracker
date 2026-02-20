@@ -1,0 +1,66 @@
+name: employee_tracker
+description: "A professional HR and Employee Tracker project with secure IoT integration."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI and Icons
+  cupertino_icons: ^1.0.8
+  
+  # Data and Charts
+  fl_chart: ^0.66.0      # For the animated Attendance analytics
+  intl: ^0.19.0          # For date formatting in Leave Tracker
+  
+  # Networking, API, and WebSockets
+  mqtt_client: ^10.11.3  # Connection to HR broker 13.203.2.58
+  http: ^1.6.0
+  web_socket_channel: ^3.0.1  # REQUIRED for the device.py connection
+  
+  # Security and Decryption
+  encrypt: ^5.0.3        # REQUIRED to decrypt AES-256-CBC data from device.py
+  
+  # Database and Storage
+  sqflite: ^2.4.2        # Local storage for attendance logs
+  path: ^1.9.0
+  
+  # Hardware and Location
+  geolocator: ^13.0.2    # GPS for employee check-ins
+  google_maps_flutter: ^2.10.0
+  url_launcher: ^6.3.1
+  
+  # Desktop Management
+  window_manager: ^0.4.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  web:
+    generate: true
+    image_path: "images/app_icon.png"
+  windows:
+    generate: true
+    image_path: "images/app_icon.png"
+  macos:
+    generate: true
+    image_path: "images/app_icon.png"
+  image_path: "images/app_icon.png"
+
+flutter:
+  uses-material-design: true
+
+  # Assets section
+  assets:
+    - images/             # Includes all app icons and dashboard assets
