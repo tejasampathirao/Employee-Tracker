@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -20,7 +21,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5, // Bumped version to 5
+      version: 8, // Bumped version to 8
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -78,6 +79,47 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE attendance ADD COLUMN type TEXT DEFAULT "Office"');
       await db.execute('ALTER TABLE attendance ADD COLUMN status TEXT DEFAULT "Completed"');
     }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS leaves (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          leaveType TEXT,
+          fromDate TEXT,
+          toDate TEXT,
+          reason TEXT,
+          status TEXT,
+          appliedDate TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          details TEXT,
+          phone TEXT,
+          password TEXT,
+          email TEXT
+        )
+      ''');
+      await db.insert('users', {
+        'id': 1,
+        'name': 'Srinivas Reddy',
+        'details': 'Chief Financial Officer',
+        'phone': '9876543210',
+        'password': 'password123',
+        'email': 'srinivas@example.com'
+      });
+    }
+    if (oldVersion < 8) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
+        await db.update('users', {'email': 'srinivas@example.com'}, where: 'id = ?', whereArgs: [1]);
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -133,6 +175,38 @@ class DatabaseHelper {
         status TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE leaves (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        leaveType TEXT,
+        fromDate TEXT,
+        toDate TEXT,
+        reason TEXT,
+        status TEXT,
+        appliedDate TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        details TEXT,
+        phone TEXT,
+        password TEXT,
+        email TEXT
+      )
+    ''');
+    
+    await db.insert('users', {
+      'id': 1,
+      'name': 'Srinivas Reddy',
+      'details': 'Chief Financial Officer',
+      'phone': '9876543210',
+      'password': 'password123',
+      'email': 'srinivas@example.com'
+    });
   }
 
   // --- Settings Methods ---
@@ -275,13 +349,40 @@ class DatabaseHelper {
     return await db.query('expenses', orderBy: 'id DESC');
   }
 
+  // --- Leaves Methods ---
+  Future<int> insertLeave(Map<String, dynamic> leave) async {
+    final db = await instance.database;
+    return await db.insert('leaves', leave);
+  }
+
+  Future<List<Map<String, dynamic>>> getAllLeaves() async {
+    final db = await instance.database;
+    return await db.query('leaves', orderBy: 'id DESC');
+  }
+
+  // --- User Methods ---
+  Future<Map<String, dynamic>?> getUser() async {
+    final db = await instance.database;
+    final result = await db.query('users', where: 'id = ?', whereArgs: [1]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<int> updateUserProfile(String name, String details) async {
+    final db = await instance.database;
+    return await db.update('users', {'name': name, 'details': details}, where: 'id = ?', whereArgs: [1]);
+  }
+
+  Future<int> updatePassword(String newPassword) async {
+    final db = await instance.database;
+    return await db.update('users', {'password': newPassword}, where: 'id = ?', whereArgs: [1]);
+  }
+
   Future<void> seedData() async {
     try {
-      final db = await instance.database;
       // Dummy data removed as requested
     } catch (e) {
       // Log the error but don't crash the app
-      print("Error seeding data: $e");
+      debugPrint("Error seeding data: $e");
     }
   }
 }

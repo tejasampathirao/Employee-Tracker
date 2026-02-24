@@ -5,14 +5,14 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 
 // Connection states for easy identification
 enum MqttCurrentConnectionState {
-  IDLE,
-  CONNECTING,
-  CONNECTED,
-  DISCONNECTED,
-  ERROR_WHEN_CONNECTING,
+  idle,
+  connecting,
+  connected,
+  disconnected,
+  errorWhenConnecting,
 }
 
-enum MqttSubscriptionState { IDLE, SUBSCRIBED }
+enum MqttSubscriptionState { idle, subscribed }
 
 class MQTTClientWrapper {
   // Singleton Pattern
@@ -23,8 +23,8 @@ class MQTTClientWrapper {
   }
 
   late MqttServerClient client;
-  MqttCurrentConnectionState connectionState = MqttCurrentConnectionState.IDLE;
-  MqttSubscriptionState subscriptionState = MqttSubscriptionState.IDLE;
+  MqttCurrentConnectionState connectionState = MqttCurrentConnectionState.idle;
+  MqttSubscriptionState subscriptionState = MqttSubscriptionState.idle;
   String? errorMessage;
 
   // Stream for incoming messages
@@ -47,14 +47,14 @@ class MQTTClientWrapper {
   }
 
   Future<void> connectClient() async {
-    if (connectionState == MqttCurrentConnectionState.CONNECTED) return;
+    if (connectionState == MqttCurrentConnectionState.connected) return;
 
     try {
-      connectionState = MqttCurrentConnectionState.CONNECTING;
+      connectionState = MqttCurrentConnectionState.connecting;
       errorMessage = null;
       await client.connect();
     } on Exception catch (e) {
-      connectionState = MqttCurrentConnectionState.ERROR_WHEN_CONNECTING;
+      connectionState = MqttCurrentConnectionState.errorWhenConnecting;
       
       errorMessage = 'Exception: $e';
       client.disconnect();
@@ -62,10 +62,10 @@ class MQTTClientWrapper {
     }
 
     if (client.connectionStatus?.state == MqttConnectionState.connected) {
-      connectionState = MqttCurrentConnectionState.CONNECTED;
+      connectionState = MqttCurrentConnectionState.connected;
       _setupMessageListener();
     } else {
-      connectionState = MqttCurrentConnectionState.ERROR_WHEN_CONNECTING;
+      connectionState = MqttCurrentConnectionState.errorWhenConnecting;
       client.disconnect();
     }
   }
@@ -86,7 +86,7 @@ class MQTTClientWrapper {
   }
 
   void subscribeToTopic(String topic) {
-    if (connectionState != MqttCurrentConnectionState.CONNECTED) return;
+    if (connectionState != MqttCurrentConnectionState.connected) return;
     client.subscribe(topic, MqttQos.atMostOnce);
   }
 
@@ -101,7 +101,7 @@ class MQTTClientWrapper {
   }
 
   void publishMessage(String message, {required String topic}) {
-    if (connectionState != MqttCurrentConnectionState.CONNECTED) return;
+    if (connectionState != MqttCurrentConnectionState.connected) return;
     
     final MqttClientPayloadBuilder builder = MqttClientPayloadBuilder();
     builder.addString(message);
@@ -115,16 +115,16 @@ class MQTTClientWrapper {
   }
 
   void _onSubscribed(String topic) {
-    subscriptionState = MqttSubscriptionState.SUBSCRIBED;
+    subscriptionState = MqttSubscriptionState.subscribed;
   }
 
   void _onDisconnected() {
-    connectionState = MqttCurrentConnectionState.DISCONNECTED;
-    subscriptionState = MqttSubscriptionState.IDLE;
+    connectionState = MqttCurrentConnectionState.disconnected;
+    subscriptionState = MqttSubscriptionState.idle;
   }
 
   void _onConnected() {
-    connectionState = MqttCurrentConnectionState.CONNECTED;
+    connectionState = MqttCurrentConnectionState.connected;
   }
 
   void dispose() {

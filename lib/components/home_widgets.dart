@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../network/mqtt.dart';
 import '../screens/login_screen.dart';
 import 'attendance_card.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
+import '../network/report_service.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../constants.dart';
+import 'package:fl_chart/fl_chart.dart';
+import '../screens/profile_edit_screen.dart';
 
 Widget getDrawerWidget(
   int index,
@@ -19,17 +22,93 @@ Widget getDrawerWidget(
     case 0:
       return homeListView(context, mqttClient, updateState);
     case 1:
-      return servicesView(context, updateState);
+      return servicesView(context, mqttClient, updateState);
     case 2:
       return const AttendanceHistoryView();
     case 3:
-      return profileView(context, mqttClient);
+      return profileView(context, mqttClient, updateState);
     default:
       return const Center(child: Text('Page under construction'));
   }
 }
 
+
 // --- HOME VIEW (DASHBOARD) ---
+class RealTimeTimeLogs extends StatefulWidget {
+  const RealTimeTimeLogs({super.key});
+
+  @override
+  State<RealTimeTimeLogs> createState() => _RealTimeTimeLogsState();
+}
+
+class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
+  Timer? _ticker;
+  Map<String, double> _stats = {'today': 0.0, 'week': 0.0, 'month': 0.0};
+  DateTime? _checkInTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_checkInTime != null) {
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  Future<void> _loadInitialData() async {
+    final stats = await DatabaseHelper.instance.getTimeLogStats();
+    final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
+    if (mounted) {
+      setState(() {
+        _stats = stats;
+        if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
+          _checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String _format(double hours) {
+    int h = hours.floor();
+    int m = ((hours - h) * 60).round();
+    return '$h h $m m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double activeHours = 0.0;
+    if (_checkInTime != null) {
+      activeHours = DateTime.now().difference(_checkInTime!).inSeconds / 3600.0;
+    }
+    double totalToday = _stats['today']! + activeHours;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem('Today', _format(totalToday), Icons.today),
+          _buildStatItem('This Week', _format(_stats['week']! + activeHours), Icons.calendar_view_week),
+          _buildStatItem('This Month', _format(_stats['month']! + activeHours), Icons.calendar_month),
+        ],
+      ),
+    );
+  }
+}
+
+// Update homeListView to use RealTimeTimeLogs
 Widget homeListView(
   BuildContext context,
   MQTTClientWrapper mqttClient,
@@ -50,20 +129,20 @@ Widget homeListView(
           onActionComplete: () => updateState(),
         ),
         const SizedBox(height: 24),
-        _buildDashboardSectionTitle('Expense Approvals', Icons.fact_check_outlined),
+        _buildDashboardSectionTitle('Additional Expenses', Icons.fact_check_outlined),
         const SizedBox(height: 12),
         _buildExpenseApprovalsList(),
         const SizedBox(height: 24),
         _buildDashboardSectionTitle('Time Logs', Icons.timer_outlined),
         const SizedBox(height: 12),
-        _buildTimeLogsPreview(),
+        const RealTimeTimeLogs(),
       ],
     ),
   );
 }
 
 Widget _buildHeader(MQTTClientWrapper mqttClient, Function updateState) {
-  final List<String> hrTopics = ['/attendance/live', '/leave/updates', '/payroll/status'];
+  final List<String> hrTopics = ['/attendance/live', '/leave/updates', '/payroll/status', '/expenses/updates', 'hr/leaves'];
   return Row(
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
@@ -76,19 +155,26 @@ Widget _buildHeader(MQTTClientWrapper mqttClient, Function updateState) {
   );
 }
 
+
 Widget _buildGreetingSection() {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        'Hi, Srinivas Reddy 👋',
-        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.blueGrey[800]),
-      ),
-      const Text(
-        'Here\'s what\'s happening today.',
-        style: TextStyle(color: Colors.grey, fontSize: 14),
-      ),
-    ],
+  return FutureBuilder<Map<String, dynamic>?>(
+    future: DatabaseHelper.instance.getUser(),
+    builder: (context, snapshot) {
+      final String name = snapshot.data?['name'] ?? 'Srinivas Reddy';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hi, $name 👋',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.blueGrey[800]),
+          ),
+          const Text(
+            'Here\'s what\'s happening today.',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
+        ],
+      );
+    }
   );
 }
 
@@ -126,7 +212,7 @@ Widget _buildAnimatedCard(Widget child) {
 
 Widget _buildExpenseApprovalsList() {
   return FutureBuilder<List<Map<String, dynamic>>>(
-    future: DatabaseHelper.instance.getApprovals(),
+    future: DatabaseHelper.instance.getExpenses(),
     builder: (context, snapshot) {
       if (!snapshot.hasData || snapshot.data!.isEmpty) {
         return _buildEmptyState('No pending expense approvals');
@@ -143,44 +229,13 @@ Widget _buildExpenseApprovalsList() {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
               child: ListTile(
                 leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.description, color: Colors.blue)),
-                title: Text(item['title'], style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: Text('${item['requester']} • ${item['type']}'),
-                trailing: const Icon(Icons.chevron_right),
+                title: Text(item['category'] ?? 'Expense', style: const TextStyle(fontWeight: FontWeight.w500)),
+                subtitle: Text('${item['description']} • ₹${item['amount']}'),
+                trailing: Text(item['status'], style: TextStyle(color: item['status'] == 'Pending' ? Colors.orange : Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
               ),
             ),
           );
         },
-      );
-    },
-  );
-}
-
-Widget _buildTimeLogsPreview() {
-  return FutureBuilder<Map<String, double>>(
-    future: DatabaseHelper.instance.getTimeLogStats(),
-    builder: (context, snapshot) {
-      final stats = snapshot.data ?? {'today': 0.0, 'week': 0.0, 'month': 0.0};
-      
-      String format(double hours) {
-        int h = hours.floor();
-        int m = ((hours - h) * 60).round();
-        return '${h}h ${m}m';
-      }
-
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.blue[50],
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildStatItem('Today', format(stats['today']!), Icons.today),
-            _buildStatItem('This Week', format(stats['week']!), Icons.calendar_view_week),
-            _buildStatItem('This Month', format(stats['month']!), Icons.calendar_month),
-          ],
-        ),
       );
     },
   );
@@ -196,6 +251,7 @@ Widget _buildStatItem(String label, String value, IconData icon) {
     ],
   );
 }
+
 
 Widget _buildEmptyState(String message) {
   return Center(
@@ -213,12 +269,13 @@ Widget _buildEmptyState(String message) {
 }
 
 // --- SERVICES VIEW ---
-Widget servicesView(BuildContext context, Function updateState) {
+Widget servicesView(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
   final List<Map<String, dynamic>> services = [
-    {'title': 'Leave', 'icon': Icons.calendar_today, 'color': Colors.blue, 'desc': 'Apply and track leaves'},
     {'title': 'Attendance', 'icon': Icons.location_on, 'color': Colors.green, 'desc': 'Check-in and history'},
+    {'title': 'Work', 'icon': Icons.work, 'color': Colors.indigo, 'desc': 'Log daily work and meetings'},
     {'title': 'Time Tracker', 'icon': Icons.timer, 'color': Colors.orange, 'desc': 'Log your work hours'},
-    {'title': 'Expense Approvals', 'icon': Icons.done_all, 'color': Colors.purple, 'desc': 'Manage your requests'},
+    {'title': 'Travel Expenses', 'icon': Icons.directions_car, 'color': Colors.teal, 'desc': 'Onsite and Office logs'},
+    {'title': 'Additional Expenses', 'icon': Icons.done_all, 'color': Colors.purple, 'desc': 'Manage your requests'},
   ];
 
   return Scaffold(
@@ -247,7 +304,7 @@ Widget servicesView(BuildContext context, Function updateState) {
             itemCount: services.length,
             itemBuilder: (context, index) {
               final service = services[index];
-              return _buildServiceCard(context, service, updateState);
+              return _buildServiceCard(context, service, mqttClient, updateState);
             },
           ),
         ],
@@ -258,7 +315,7 @@ Widget servicesView(BuildContext context, Function updateState) {
 
 // --- Detailed Service Views ---
 
-void _showAttendanceService(BuildContext context) {
+void _showAttendanceService(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
   final now = DateTime.now();
   final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
   final firstDayOffset = DateTime(now.year, now.month, 1).weekday % 7;
@@ -278,11 +335,87 @@ void _showAttendanceService(BuildContext context) {
             icon: const Icon(Icons.arrow_back_ios, size: 20),
           ),
           const SizedBox(height: 10),
-          Text(
-            'Attendance: ${DateFormat('MMMM yyyy').format(now)}', 
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Attendance: ${DateFormat('MMMM yyyy').format(now)}', 
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _showLeaveService(context, mqttClient, updateState),
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: const Text('Manage Leaves'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[50],
+                  foregroundColor: Colors.blue,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: DatabaseHelper.instance.getAllAttendance(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox.shrink();
+
+              final currentMonthStr = DateFormat('yyyy-MM').format(now);
+              final monthlyData = snapshot.data!.where((e) => e['date'].startsWith(currentMonthStr)).toList();
+              final presentDates = monthlyData.map((e) => e['date']).toSet();
+              
+              int daysPresent = presentDates.length;
+              int totalDaysPassed = now.day;
+              int daysAbsent = totalDaysPassed - daysPresent;
+              if (daysAbsent < 0) daysAbsent = 0;
+
+              double presentPct = totalDaysPassed > 0 ? (daysPresent / totalDaysPassed) * 100 : 0;
+              double absentPct = 100 - presentPct;
+
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 180,
+                    child: PieChart(
+                      PieChartData(
+                        sectionsSpace: 4,
+                        centerSpaceRadius: 40,
+                        sections: [
+                          PieChartSectionData(
+                            color: Colors.green,
+                            value: presentPct,
+                            title: '${presentPct.toStringAsFixed(0)}%',
+                            radius: 50,
+                            titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          PieChartSectionData(
+                            color: Colors.orange,
+                            value: absentPct,
+                            title: '${absentPct.toStringAsFixed(0)}%',
+                            radius: 50,
+                            titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _LegendItem(color: Colors.green, label: 'Present: $daysPresent'),
+                      const SizedBox(width: 20),
+                      _LegendItem(color: Colors.orange, label: 'Absent: $daysAbsent'),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              );
+            },
+          ),
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
@@ -311,7 +444,7 @@ void _showAttendanceService(BuildContext context) {
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: isPresent ? Colors.green : Colors.orange.withOpacity(0.8),
+                        color: isPresent ? Colors.green : Colors.orange.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(8),
                         border: isToday ? Border.all(color: Colors.blue, width: 2) : null,
                       ),
@@ -369,6 +502,166 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
+void _showTravelExpenseService(BuildContext context, MQTTClientWrapper mqttClient) {
+  final TextEditingController descController = TextEditingController();
+  final TextEditingController amtController = TextEditingController();
+  String selectedCategory = 'Onsite';
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    builder: (context) => StatefulBuilder(
+      builder: (context, setModalState) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_ios, size: 20),
+                    ),
+                    const Text('Travel Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: descController,
+                  decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: amtController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ ', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 20),
+                const Text('Location Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment<String>(value: 'Onsite', label: Text('Onsite'), icon: Icon(Icons.location_on_outlined)),
+                      ButtonSegment<String>(value: 'Office', label: Text('Office'), icon: Icon(Icons.business_outlined)),
+                    ],
+                    selected: {selectedCategory},
+                    onSelectionChanged: (Set<String> newSelection) {
+                      setModalState(() => selectedCategory = newSelection.first);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (descController.text.isEmpty || amtController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+                        return;
+                      }
+
+                      final expense = {
+                        'type': 'Travel',
+                        'category': selectedCategory,
+                        'description': descController.text,
+                        'amount': double.tryParse(amtController.text) ?? 0.0,
+                        'date': DateTime.now().toIso8601String(),
+                        'status': 'Pending'
+                      };
+
+                      await DatabaseHelper.instance.insertExpense(expense);
+                      mqttClient.publishMessage('Travel Expense: $selectedCategory - ${descController.text}', topic: '/expenses/updates');
+
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully!')));
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: const Text('Submit Travel Log', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+void _showWorkService(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.5,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_ios, size: 20),
+                ),
+                const Text('Daily Work Log', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const TextField(
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'Description',
+                hintText: 'Enter your work details...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const TextField(
+              decoration: InputDecoration(
+                labelText: 'Client Meet',
+                hintText: 'Meeting details...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Work details submitted successfully!'))
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Submit', style: TextStyle(color: Colors.white, fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 void _showTimeTrackerService(BuildContext context) {
   showModalBottomSheet(
     context: context,
@@ -387,8 +680,9 @@ void _showTimeTrackerService(BuildContext context) {
           const SizedBox(height: 10),
           const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
-          _buildTimeLogsPreview(),
+          const RealTimeTimeLogs(),
           const SizedBox(height: 20),
+
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getTimeLogs(),
@@ -421,21 +715,33 @@ void _showTimeTrackerService(BuildContext context) {
   );
 }
 
-void _showExpenseApprovalsService(BuildContext context) {
+void _showExpenseApprovalsService(BuildContext context, MQTTClientWrapper mqttClient) {
   final Map<String, TextEditingController> controllers = {};
   
   void saveExpense(String type, String category, String description, String amount) async {
     double? amt = double.tryParse(amount);
     if (amt == null || amt <= 0) return;
 
-    await DatabaseHelper.instance.insertExpense({
+    final Map<String, dynamic> expense = {
       'type': type,
       'category': category,
       'description': description,
       'amount': amt,
       'date': DateTime.now().toIso8601String(),
       'status': 'Pending'
-    });
+    };
+
+    int id = await DatabaseHelper.instance.insertExpense(expense);
+    
+    // Append to Report File on device
+    expense['id'] = id;
+    await ReportService.appendExpenseToReport(expense);
+    
+    // Publish via MQTT
+    mqttClient.publishMessage(
+      'New Expense: $category - ₹$amt for $description', 
+      topic: '/expenses/updates'
+    );
   }
 
   showModalBottomSheet(
@@ -457,22 +763,18 @@ void _showExpenseApprovalsService(BuildContext context) {
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios, size: 20),
                   ),
-                  const Text('Expense Approvals', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text('Additional Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 48), // Spacer to balance the arrow
                 ],
               ),
-              const SizedBox(height: 24),
-              _buildExpenseSection(context, 'Travel Expenses', 'Travel', controllers, (cat, desc, amt) {
-                saveExpense('Travel', cat, desc, amt);
-              }),
               const SizedBox(height: 24),
               _buildExpenseSection(context, 'Material Expenses', 'Material', controllers, (cat, desc, amt) {
                 saveExpense('Material', cat, desc, amt);
               }),
               const SizedBox(height: 24),
-              _buildExpenseSection(context, 'Other Expenses', 'Other', controllers, (cat, desc, amt) {
-                saveExpense('Other', cat, desc, amt);
-              }, subTypes: ['Fuel Expenses', 'Miscellaneous']),
+              _buildExpenseSection(context, 'Fuel Expenses', 'Fuel', controllers, (cat, desc, amt) {
+                saveExpense('Fuel', cat, desc, amt);
+              }),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
@@ -516,7 +818,7 @@ Widget _buildExpenseSection(
   
   if (subTypes != null) {
     for (var sub in subTypes) {
-      controllers.putIfAbsent('${typeKey}_${sub}', () => TextEditingController());
+      controllers.putIfAbsent('${typeKey}_$sub', () => TextEditingController());
     }
   }
 
@@ -531,10 +833,10 @@ Widget _buildExpenseSection(
             onPressed: () {
               if (subTypes != null) {
                 for (var sub in subTypes) {
-                  final subAmt = controllers['${typeKey}_${sub}']?.text ?? '';
+                  final subAmt = controllers['${typeKey}_$sub']?.text ?? '';
                   if (subAmt.isNotEmpty) {
                     onAdd(sub, 'Auto-added $sub', subAmt);
-                    controllers['${typeKey}_${sub}']?.clear();
+                    controllers['${typeKey}_$sub']?.clear();
                   }
                 }
               } else {
@@ -555,12 +857,13 @@ Widget _buildExpenseSection(
         ...subTypes.map((sub) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: TextField(
-            controller: controllers['${typeKey}_${sub}'],
+            controller: controllers['${typeKey}_$sub'],
             decoration: InputDecoration(
-              labelText: sub,
-              hintText: 'Enter $sub amount',
-              prefixText: '\$ ',
-              filled: true,
+                          labelText: sub,
+                          hintText: 'Enter $sub amount',
+                          prefixText: '₹ ',
+                          filled: true,
+              
               fillColor: Colors.grey[50],
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
@@ -586,7 +889,7 @@ Widget _buildExpenseSection(
           decoration: InputDecoration(
             labelText: 'Amount',
             hintText: 'Enter amount',
-            prefixText: '\$ ',
+            prefixText: '₹ ',
             filled: true,
             fillColor: Colors.grey[50],
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
@@ -664,21 +967,24 @@ Widget _buildChatBubble(String text, bool isUser) {
   );
 }
 
-Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Function updateState) {
+Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MQTTClientWrapper mqttClient, Function updateState) {
   return InkWell(
     onTap: () {
       switch (service['title']) {
-        case 'Leave':
-          _showLeaveService(context, updateState);
-          break;
         case 'Attendance':
-          _showAttendanceService(context);
+          _showAttendanceService(context, mqttClient, updateState);
           break;
         case 'Time Tracker':
           _showTimeTrackerService(context);
           break;
-        case 'Expense Approvals':
-          _showExpenseApprovalsService(context);
+        case 'Work':
+          _showWorkService(context);
+          break;
+        case 'Travel Expenses':
+          _showTravelExpenseService(context, mqttClient);
+          break;
+        case 'Additional Expenses':
+          _showExpenseApprovalsService(context, mqttClient);
           break;
         default:
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${service['title']} service coming soon!')));
@@ -689,14 +995,14 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Fun
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: service['color'].withOpacity(0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: service['color'].withValues(alpha: 0.1), shape: BoxShape.circle),
             child: Icon(service['icon'], color: service['color'], size: 32),
           ),
           const SizedBox(height: 12),
@@ -715,7 +1021,8 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Fun
   );
 }
 
-void _showLeaveService(BuildContext context, Function updateState) {
+
+void _showLeaveService(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -725,7 +1032,7 @@ void _showLeaveService(BuildContext context, Function updateState) {
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
-      builder: (context, scrollController) => _leaveTrackerView(context, updateState),
+      builder: (context, scrollController) => _leaveTrackerView(context, mqttClient, updateState),
     ),
   );
 }
@@ -734,18 +1041,29 @@ void _showLeaveService(BuildContext context, Function updateState) {
 Widget _buildSystemControls(MQTTClientWrapper mqttClient, List<String> hrTopics, Function updateState) {
   return Row(
     children: [
-      if (mqttClient.connectionState != MqttCurrentConnectionState.CONNECTED)
+      if (mqttClient.connectionState == MqttCurrentConnectionState.connecting)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      if (mqttClient.connectionState != MqttCurrentConnectionState.connected && mqttClient.connectionState != MqttCurrentConnectionState.connecting)
         IconButton(
           onPressed: () async {
+            // Update UI to show loading state
+            updateState(); 
             await mqttClient.connectClient();
-            if (mqttClient.connectionState == MqttCurrentConnectionState.CONNECTED) {
+            if (mqttClient.connectionState == MqttCurrentConnectionState.connected) {
               mqttClient.subscribeToTopics(hrTopics);
             }
+            // Update UI with final result
             updateState();
           },
-          icon: const Icon(Icons.link, color: Color(0xff21b409)),
+          icon: Icon(
+            Icons.link, 
+            color: mqttClient.connectionState == MqttCurrentConnectionState.errorWhenConnecting ? Colors.orange : const Color(0xff21b409)
+          ),
         ),
-      if (mqttClient.connectionState == MqttCurrentConnectionState.CONNECTED) ...[
+      if (mqttClient.connectionState == MqttCurrentConnectionState.connected) ...[
         IconButton(
           onPressed: () {
             mqttClient.subscribeToTopics(hrTopics);
@@ -765,37 +1083,68 @@ Widget _buildSystemControls(MQTTClientWrapper mqttClient, List<String> hrTopics,
   );
 }
 
+
 // --- PROFILE VIEW ---
-Widget profileView(BuildContext context, MQTTClientWrapper mqttClient) {
-  return ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      const Center(
-        child: Column(
-          children: [
-            CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
-            SizedBox(height: 16),
-            Text('Srinivas Reddy', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            Text('Chief Financial Officer', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      ),
-      const SizedBox(height: 32),
-      ListTile(
-        leading: const Icon(Icons.settings_outlined),
-        title: const Text('Settings'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => _showSettings(context),
-      ),
-      ListTile(
-        leading: const Icon(Icons.power_settings_new, color: Colors.red),
-        title: const Text('Logout', style: TextStyle(color: Colors.red)),
-        onTap: () {
-          mqttClient.client.disconnect();
-          Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
-        },
-      ),
-    ],
+Widget profileView(BuildContext context, MQTTClientWrapper mqttClient, Function onUpdate) {
+  return FutureBuilder<Map<String, dynamic>?>(
+    future: DatabaseHelper.instance.getUser(),
+    builder: (context, snapshot) {
+      final user = snapshot.data ?? {
+        'name': 'Srinivas Reddy',
+        'details': 'Chief Financial Officer'
+      };
+      
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: Column(
+              children: [
+                const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
+                const SizedBox(height: 16),
+                Text(user['name'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text(user['details'], style: const TextStyle(color: Colors.grey)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+            title: const Text('Edit Profile'),
+            subtitle: const Text('Update your name and job details'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final updated = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileEditScreen(
+                    currentName: user['name'],
+                    currentDetails: user['details'],
+                  ),
+                ),
+              );
+              if (updated == true) {
+                onUpdate(); // Trigger refresh on Home Page
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showSettings(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.power_settings_new, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              mqttClient.client.disconnect();
+              Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
+            },
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -974,7 +1323,7 @@ void _showOfficeLocationDialog(BuildContext context) {
                         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                         
                         final initialPos = LatLng(snapshot.data!.latitude, snapshot.data!.longitude);
-                        if (pickedLocation == null) pickedLocation = initialPos;
+                        pickedLocation ??= initialPos;
 
                         return GoogleMap(
                           initialCameraPosition: CameraPosition(target: initialPos, zoom: 17),
@@ -1006,7 +1355,7 @@ void _showOfficeLocationDialog(BuildContext context) {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)],
                             ),
                             child: Column(
                               children: [
@@ -1099,7 +1448,7 @@ void _showGeofenceDialog(BuildContext context) async {
 }
 
 // --- LEAVE TRACKER (Used by Services) ---
-Widget _leaveTrackerView(BuildContext context, Function updateState) {
+Widget _leaveTrackerView(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
   return Padding(
     padding: const EdgeInsets.all(16.0),
     child: Column(
@@ -1110,7 +1459,7 @@ Widget _leaveTrackerView(BuildContext context, Function updateState) {
           children: [
             const Text('Leave Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ElevatedButton.icon(
-              onPressed: () => _showApplyLeaveForm(context),
+              onPressed: () => _showApplyLeaveForm(context, mqttClient),
               icon: const Icon(Icons.add),
               label: const Text('Apply'),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
@@ -1146,9 +1495,9 @@ Widget _buildLeaveBalanceCard(String type, int available, int booked, Color colo
   return Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: color.withOpacity(0.05),
+      color: color.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: color.withOpacity(0.1)),
+      border: Border.all(color: color.withValues(alpha: 0.1)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1167,9 +1516,11 @@ Widget _buildLeaveBalanceCard(String type, int available, int booked, Color colo
   );
 }
 
-void _showApplyLeaveForm(BuildContext context) {
+void _showApplyLeaveForm(BuildContext context, MQTTClientWrapper mqttClient) {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
+  final TextEditingController reasonController = TextEditingController();
+  String selectedLeaveType = 'Casual Leave';
   
   showModalBottomSheet(
     context: context,
@@ -1181,25 +1532,29 @@ void _showApplyLeaveForm(BuildContext context) {
         child: Container(
           padding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.arrow_back_ios, size: 20),
-                              ),
-                              const Text('Apply Leave', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          const SizedBox(height: 24),                DropdownButtonFormField<String>(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_ios, size: 20),
+                    ),
+                    const Text('Apply Leave', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedLeaveType,
                   decoration: const InputDecoration(labelText: 'Leave type', border: OutlineInputBorder()),
                   items: ['Casual Leave', 'Earned Leave', 'Sick Leave']
                       .map((label) => DropdownMenuItem(value: label, child: Text(label)))
                       .toList(),
-                  onChanged: (value) {},
+                  onChanged: (value) {
+                    if (value != null) selectedLeaveType = value;
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -1241,6 +1596,7 @@ void _showApplyLeaveForm(BuildContext context) {
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
+                  controller: reasonController,
                   maxLines: 3,
                   decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
                 ),
@@ -1249,7 +1605,35 @@ void _showApplyLeaveForm(BuildContext context) {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () async {
+                      if (fromDateController.text.isEmpty || toDateController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select dates')));
+                        return;
+                      }
+
+                      final Map<String, dynamic> leaveData = {
+                        'leaveType': selectedLeaveType,
+                        'fromDate': fromDateController.text,
+                        'toDate': toDateController.text,
+                        'reason': reasonController.text,
+                        'status': 'Pending',
+                        'appliedDate': DateTime.now().toIso8601String(),
+                      };
+
+                      int id = await DatabaseHelper.instance.insertLeave(leaveData);
+                      
+                      // Append to Report File
+                      leaveData['id'] = id;
+                      await ReportService.appendLeaveToReport(leaveData);
+
+                      // CLOSED-LOOP TEST: Publish message to be received by Dashboard
+                      mqttClient.publishMessage('Leave Request Saved: $selectedLeaveType', topic: 'hr/leaves');
+
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Leave Application Submitted Successfully!')));
+                      }
+                    },
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     child: const Text('Submit Application', style: TextStyle(color: Colors.white, fontSize: 16)),
                   ),
@@ -1262,3 +1646,4 @@ void _showApplyLeaveForm(BuildContext context) {
     ),
   );
 }
+

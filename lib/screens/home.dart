@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart'; // THIS LINE FIXES THE "UNDEFINED WIDGET" ERRORS
+import 'dart:async';
 import '../network/mqtt.dart';
 import '../components/home_widgets.dart';
 import '../components/attendance_history_view.dart';
@@ -14,6 +15,45 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  late StreamSubscription<Map<String, String>> _mqttSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to MQTT messages to update UI in real-time
+    _mqttSubscription = widget.mqttClient.messageStream.listen((data) {
+      if (mounted) {
+        String topic = data.keys.first;
+        String message = data.values.first;
+
+        // Visual Feedback for Closed-Loop Test
+        if (topic == 'hr/leaves') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('MQTT RECEIVED: $message'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else if (topic == '/expenses/updates') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.blue,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() {}); // Refresh dashboard on any message
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _mqttSubscription.cancel();
+    super.dispose();
+  }
 
   void updateState() {
     setState(() {});
@@ -23,7 +63,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         if (_selectedIndex != 0) {
           setState(() {
@@ -54,9 +94,9 @@ class _HomePageState extends State<HomePage> {
             index: _selectedIndex,
             children: [
               homeListView(context, widget.mqttClient, () => setState(() {})),
-              servicesView(context, () => setState(() {})),
+              servicesView(context, widget.mqttClient, () => setState(() {})),
               const AttendanceHistoryView(),
-              profileView(context, widget.mqttClient),
+              profileView(context, widget.mqttClient, () => setState(() {})),
             ],
           ),
         ),
@@ -81,3 +121,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+

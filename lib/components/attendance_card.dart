@@ -6,6 +6,9 @@ import '../network/mqtt.dart';
 import '../network/location_service.dart';
 import 'package:geolocator/geolocator.dart';
 import '../constants.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz;
 
 class AttendanceCard extends StatefulWidget {
   final MQTTClientWrapper mqttClient;
@@ -24,11 +27,47 @@ class _AttendanceCardState extends State<AttendanceCard> {
   int? _currentAttendanceId;
   double? _checkInLat;
   double? _checkInLng;
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     _loadLastAttendance();
+  }
+
+  Future<void> _initializeNotifications() async {
+    tz.initializeTimeZones();
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
+  Future<void> _scheduleNextShiftAlarm() async {
+    final now = DateTime.now();
+    var scheduledDate = DateTime(now.year, now.month, now.day + 1, 9, 0); // 9:00 AM tomorrow
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      0,
+      'Upcoming Shift',
+      'Your next shift starts at 9:00 AM. Get ready!',
+      tz.TZDateTime.from(scheduledDate, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'shift_alarm',
+          'Shift Alarms',
+          channelDescription: 'Alarms for upcoming shifts',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
   }
 
   Future<void> _loadLastAttendance() async {
@@ -90,33 +129,31 @@ class _AttendanceCardState extends State<AttendanceCard> {
               ),
             );
             
-            if (position != null) {
-              // Load office coordinates and radius from settings
-              double officeLat = kOfficeLatitude;
-              double officeLng = kOfficeLongitude;
-              double radius = kGeofenceRadiusMeter;
+            // Load office coordinates and radius from settings
+            double officeLat = kOfficeLatitude;
+            double officeLng = kOfficeLongitude;
+            double radius = kGeofenceRadiusMeter;
 
-              final savedLat = await DatabaseHelper.instance.getSetting('office_latitude');
-              final savedLng = await DatabaseHelper.instance.getSetting('office_longitude');
-              final savedRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
+            final savedLat = await DatabaseHelper.instance.getSetting('office_latitude');
+            final savedLng = await DatabaseHelper.instance.getSetting('office_longitude');
+            final savedRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
 
-              if (savedLat != null && savedLng != null) {
-                officeLat = double.tryParse(savedLat) ?? kOfficeLatitude;
-                officeLng = double.tryParse(savedLng) ?? kOfficeLongitude;
-              }
-              if (savedRadius != null) {
-                radius = double.tryParse(savedRadius) ?? kGeofenceRadiusMeter;
-              }
-
-              double distance = Geolocator.distanceBetween(
-                position.latitude,
-                position.longitude,
-                officeLat,
-                officeLng,
-              );
-              
-              isAtOffice = distance <= radius;
+            if (savedLat != null && savedLng != null) {
+              officeLat = double.tryParse(savedLat) ?? kOfficeLatitude;
+              officeLng = double.tryParse(savedLng) ?? kOfficeLongitude;
             }
+            if (savedRadius != null) {
+              radius = double.tryParse(savedRadius) ?? kGeofenceRadiusMeter;
+            }
+
+            double distance = Geolocator.distanceBetween(
+              position.latitude,
+              position.longitude,
+              officeLat,
+              officeLng,
+            );
+            
+            isAtOffice = distance <= radius;
           }
         } catch (e) {
           // Fallback handled below
@@ -207,6 +244,10 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
           await DatabaseHelper.instance.checkOut(timeString, _currentAttendanceId!, status: finalStatus);
           
+          if (finalStatus == 'Completed') {
+            await _scheduleNextShiftAlarm();
+          }
+
           _timer?.cancel();
           LocationService().stopTracking();
           setState(() {
@@ -259,8 +300,13 @@ class _AttendanceCardState extends State<AttendanceCard> {
           children: [
             const CircleAvatar(radius: 45, child: Icon(Icons.person, size: 45)),
             const SizedBox(height: 12),
-            const Text('Srinivas Reddy', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const Text('CFO', style: TextStyle(color: Colors.grey)),
+            FutureBuilder<Map<String, dynamic>?>(
+              future: DatabaseHelper.instance.getUser(),
+              builder: (context, snapshot) {
+                final name = snapshot.data?['name'] ?? 'Employee Name';
+                return Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18));
+              },
+            ),
             const Divider(height: 30),
             Text(
               _isCheckedIn ? 'Checked-in' : 'Yet to check-in',

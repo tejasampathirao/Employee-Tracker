@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../constants.dart';
 import '../screens/home.dart';
-import '../network/mqtt.dart';
+import '../screens/forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,135 +26,186 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      // Stack allows drawing behind the system bars if needed, but we use Container with gradient
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.blue[50]!, Colors.white],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.blue[900]!.withOpacity(0.05),
+              Colors.white,
+              Colors.green[50]!.withOpacity(0.3),
+            ],
           ),
         ),
         child: SafeArea(
+          // SafeArea ensures content doesn't overlap with system UI buttons/notch
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 800),
             opacity: _opacity,
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: <Widget>[
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios, color: Colors.blue),
-                        onPressed: () => Navigator.pop(context),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 30.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const SizedBox(height: 20),
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                        ],
                       ),
-                    ],
+                      child: const Icon(Icons.arrow_back_ios_new, color: Colors.blue, size: 20),
+                    ),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                  const SizedBox(height: 40),
+                  Text(
+                    'Welcome Back',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[900],
+                    ),
+                  ),
+                  const Text(
+                    'Log in to your workspace to continue.',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 50),
+                  Form(
+                    key: _keyL,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        const SizedBox(height: 40),
-                        Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: 'EMPLOYEE ',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.blue[900],
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: 'TRACKER',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w300,
-                                      color: Colors.green[700],
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
+                        _buildStyledTextField(
+                          hint: 'Email Address',
+                          icon: Icons.alternate_email,
+                          type: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 20.0),
+                        _buildStyledTextField(
+                          hint: 'Password',
+                          icon: Icons.lock_open_rounded,
+                          isPassword: true,
+                        ),
+                        const SizedBox(height: 15),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()));
+                            },
+                            child: const Text('Forgot Password?', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(height: 40.0),
+                        Container(
+                          width: double.infinity,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            gradient: LinearGradient(
+                              colors: [Colors.blue[800]!, const Color(0xff21b409)],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue[800]!.withOpacity(0.3),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
                               ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                            ),
+                            child: const Text(
+                              'LOG IN',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.5),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 60),
-                        Form(
-                          key: _keyL,
-                          child: Column(
-                            children: <Widget>[
-                              TextFormField(
-                                keyboardType: TextInputType.emailAddress,
-                                decoration: kTextFieldDecoration.copyWith(
-                                  hintText: 'Email Address',
-                                  prefixIcon: const Icon(Icons.email_outlined, color: Colors.blue),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 20.0),
-                              TextFormField(
-                                obscureText: true,
-                                decoration: kTextFieldDecoration.copyWith(
-                                  hintText: 'Password',
-                                  prefixIcon: const Icon(Icons.lock_outline, color: Colors.green),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 40.0),
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(30),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.green.withOpacity(0.3),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xff21b409),
-                                    foregroundColor: Colors.white,
-                                    minimumSize: const Size(double.infinity, 55),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                    elevation: 0,
-                                  ),
-                                  child: const Text('LOG IN', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              TextButton(
-                                onPressed: () {},
-                                child: const Text('Forgot Password?', style: TextStyle(color: Colors.blueGrey)),
-                              ),
+                        const SizedBox(height: 40),
+                        const Row(
+                          children: [
+                            Expanded(child: Divider()),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16),
+                              child: Text('OR', style: TextStyle(color: Colors.grey)),
+                            ),
+                            Expanded(child: Divider()),
+                          ],
+                        ),
+                        const SizedBox(height: 30),
+                        Center(
+                          child: Wrap(
+                            spacing: 20,
+                            children: [
+                              _buildSocialButton(Icons.fingerprint, Colors.blue),
+                              _buildSocialButton(Icons.face_unlock_rounded, Colors.green),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildStyledTextField({required String hint, required IconData icon, bool isPassword = false, TextInputType? type}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        obscureText: isPassword,
+        keyboardType: type,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
+          prefixIcon: Icon(icon, color: Colors.blue[900], size: 22),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialButton(IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[200]!),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Icon(icon, color: color, size: 30),
+    );
+  }
 }
+

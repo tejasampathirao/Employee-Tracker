@@ -106,7 +106,7 @@ class LocationService {
   }
 
   void _sendLocationUpdate(Position position) {
-    if (_mqttClient != null && _mqttClient!.connectionState == MqttCurrentConnectionState.CONNECTED) {
+    if (_mqttClient != null && _mqttClient!.connectionState == MqttCurrentConnectionState.connected) {
       final data = {
         'lat': position.latitude,
         'lng': position.longitude,

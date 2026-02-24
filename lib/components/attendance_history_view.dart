@@ -115,7 +115,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: (type == 'Office' ? Colors.green : Colors.blue).withOpacity(0.1),
+                            color: (type == 'Office' ? Colors.green : Colors.blue).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -132,7 +132,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: Colors.red.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
@@ -190,7 +190,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
