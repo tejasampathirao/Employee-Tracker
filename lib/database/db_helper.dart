@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -21,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8, // Bumped version to 8
+      version: 11, // Bumped version to 11
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -33,7 +34,6 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE attendance ADD COLUMN longitude REAL');
     }
     if (oldVersion < 3) {
-      // Create new tables for existing users upgrading to version 3
       await db.execute('''
         CREATE TABLE IF NOT EXISTS approvals (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,9 +116,32 @@ class DatabaseHelper {
       try {
         await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
         await db.update('users', {'email': 'srinivas@example.com'}, where: 'id = ?', whereArgs: [1]);
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
+    }
+    if (oldVersion < 9) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sites (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT,
+          lat REAL,
+          lng REAL
+        )
+      ''');
+      await db.insert('sites', {
+        'name': 'Head Office',
+        'lat': 12.9716,
+        'lng': 77.5946
+      });
+    }
+    if (oldVersion < 10) {
+      try {
+        await db.execute('ALTER TABLE expenses ADD COLUMN visit_type TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 11) {
+      try {
+        await db.execute('ALTER TABLE expenses ADD COLUMN bill_image TEXT');
+      } catch (e) {}
     }
   }
 
@@ -172,7 +195,9 @@ class DatabaseHelper {
         amount REAL,
         description TEXT,
         date TEXT,
-        status TEXT
+        status TEXT,
+        visit_type TEXT,
+        bill_image TEXT
       )
     ''');
 
@@ -198,6 +223,15 @@ class DatabaseHelper {
         email TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE sites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        lat REAL,
+        lng REAL
+      )
+    ''');
     
     await db.insert('users', {
       'id': 1,
@@ -207,6 +241,32 @@ class DatabaseHelper {
       'password': 'password123',
       'email': 'srinivas@example.com'
     });
+
+    await db.insert('sites', {
+      'name': 'Head Office',
+      'lat': 12.9716,
+      'lng': 77.5946
+    });
+  }
+
+  // --- Sites Methods ---
+  Future<int> addSite(String name, double lat, double lng) async {
+    final db = await instance.database;
+    return await db.insert('sites', {
+      'name': name,
+      'lat': lat,
+      'lng': lng
+    });
+  }
+
+  Future<Map<String, LatLng>> getSites() async {
+    final db = await instance.database;
+    final List<Map<String, dynamic>> maps = await db.query('sites');
+    
+    return {
+      for (var row in maps)
+        row['name'] as String: LatLng(row['lat'] as double, row['lng'] as double)
+    };
   }
 
   // --- Settings Methods ---
@@ -475,6 +535,26 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getAllLeaves() async {
     final db = await instance.database;
     return await db.query('leaves', orderBy: 'id DESC');
+  }
+
+  // --- Report Methods ---
+  Future<String> calculateHoursInRange(DateTime start, DateTime end) async {
+    final db = await instance.database;
+    final startStr = DateFormat('yyyy-MM-dd').format(start);
+    final endStr = DateFormat('yyyy-MM-dd').format(end);
+
+    // Query sum of hours from timelogs table for the date range
+    final result = await db.rawQuery(
+      'SELECT SUM(hours) as total FROM timelogs WHERE date >= ? AND date <= ?',
+      [startStr, endStr],
+    );
+
+    double totalHours = (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    
+    int h = totalHours.floor();
+    int m = ((totalHours - h) * 60).round();
+    
+    return "${h}h ${m}m";
   }
 
   // --- User Methods ---

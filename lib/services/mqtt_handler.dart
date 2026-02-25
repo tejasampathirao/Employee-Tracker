@@ -119,6 +119,37 @@ class MqttHandler {
     publish(expensesTopic, jsonString);
   }
 
+  /// Function 5: Publishes a travel expense with route information
+  void publishTravelExpense({
+    required double amount,
+    required String description,
+    required String visitType,
+    required double srcLat,
+    required double srcLng,
+    required double destLat,
+    required double destLng,
+    required double distanceKm,
+    required String employeeId,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "travel_expense",
+      "amount": amount,
+      "description": description,
+      "visit_type": visitType,
+      "timestamp": DateTime.now().toIso8601String(),
+      "employee_id": employeeId,
+      "route_info": {
+        "source": {"lat": srcLat, "lng": srcLng},
+        "destination": {"lat": destLat, "lng": destLng},
+        "distance_km": distanceKm
+      }
+    };
+
+    final String jsonString = jsonEncode(payload);
+    debugPrint('MQTT DEBUG [Travel Expense]: Sending Payload: $jsonString');
+    publish(expensesTopic, jsonString);
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};

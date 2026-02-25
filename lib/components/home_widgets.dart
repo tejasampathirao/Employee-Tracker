@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
 import 'attendance_card.dart';
@@ -579,102 +583,226 @@ class _LegendItem extends StatelessWidget {
 void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
   final TextEditingController descController = TextEditingController();
   final TextEditingController amtController = TextEditingController();
-  String selectedCategory = 'Onsite';
+  final TextEditingController priceController = TextEditingController(text: "103");
+  final TextEditingController mileageController = TextEditingController(text: "35");
+  String? selectedSite;
+  String visitType = 'Onsite';
+  Map<String, LatLng> companySites = {};
+
+  Future<void> loadSites(Function setModalState) async {
+    final sites = await DatabaseHelper.instance.getSites();
+    setModalState(() {
+      companySites = sites;
+      if (companySites.isNotEmpty && selectedSite == null) {
+        selectedSite = companySites.keys.first;
+      }
+    });
+  }
 
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
     builder: (context) => StatefulBuilder(
-      builder: (context, setModalState) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back_ios, size: 20),
-                    ),
-                    const Text('Travel Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: descController,
-                  decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: amtController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ ', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 20),
-                const Text('Location Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment<String>(value: 'Onsite', label: Text('Onsite'), icon: Icon(Icons.location_on_outlined)),
-                      ButtonSegment<String>(value: 'Office', label: Text('Office'), icon: Icon(Icons.business_outlined)),
+      builder: (context, setModalState) {
+        if (companySites.isEmpty) {
+          loadSites(setModalState);
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back_ios, size: 20),
+                      ),
+                      const Text('Travel Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                     ],
-                    selected: {selectedCategory},
-                    onSelectionChanged: (Set<String> newSelection) {
-                      setModalState(() => selectedCategory = newSelection.first);
+                  ),
+                  const SizedBox(height: 24),
+                  const Text('Visit Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<String>(
+                          title: const Text('Onsite 🏭', style: TextStyle(fontSize: 14)),
+                          value: 'Onsite',
+                          groupValue: visitType,
+                          onChanged: (val) => setModalState(() => visitType = val!),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<String>(
+                          title: const Text('Office 🏢', style: TextStyle(fontSize: 14)),
+                          value: 'Office',
+                          groupValue: visitType,
+                          onChanged: (val) => setModalState(() => visitType = val!),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: priceController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Fuel Price (₹/L)', border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: mileageController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Mileage (km/L)', border: OutlineInputBorder()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descController,
+                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amtController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ ', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Target Site', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      IconButton(
+                        icon: const Icon(Icons.add_location_alt, color: Colors.blue),
+                        onPressed: () async {
+                          // Add New Site Logic
+                          final Position pos = await Geolocator.getCurrentPosition();
+                          if (!context.mounted) return;
+                          
+                          final nameController = TextEditingController();
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Add Current Location as Site'),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Lat: ${pos.latitude.toStringAsFixed(4)}, Lng: ${pos.longitude.toStringAsFixed(4)}'),
+                                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Site Name')),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                                ElevatedButton(
+                                  onPressed: () async {
+                                    if (nameController.text.isNotEmpty) {
+                                      await DatabaseHelper.instance.addSite(nameController.text, pos.latitude, pos.longitude);
+                                      await loadSites(setModalState);
+                                      if (context.mounted) Navigator.pop(context);
+                                    }
+                                  }, 
+                                  child: const Text('Save Site'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedSite,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    items: companySites.keys.map((site) => DropdownMenuItem(value: site, child: Text(site))).toList(),
+                    onChanged: (val) {
+                      setModalState(() => selectedSite = val);
+                      // Auto-calculate on site change
+                      _calculateTripCost(val, companySites, priceController, mileageController, amtController, (msg) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+                      });
                     },
                   ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (descController.text.isEmpty || amtController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
-                        return;
-                      }
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (descController.text.isEmpty || amtController.text.isEmpty || selectedSite == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+                          return;
+                        }
 
-                      final amount = double.tryParse(amtController.text) ?? 0.0;
-                      final expense = {
-                        'type': 'Travel',
-                        'category': selectedCategory,
-                        'description': descController.text,
-                        'amount': amount,
-                        'date': DateTime.now().toIso8601String(),
-                        'status': 'Pending'
-                      };
+                        final amount = double.tryParse(amtController.text) ?? 0.0;
+                        final expense = {
+                          'type': 'Travel',
+                          'category': selectedSite,
+                          'description': descController.text,
+                          'amount': amount,
+                          'date': DateTime.now().toIso8601String(),
+                          'status': 'Pending',
+                          'visit_type': visitType // Saving visitType
+                        };
 
-                      await DatabaseHelper.instance.insertExpense(expense);
-                      
-                      // Fetch user info for MQTT payload
-                      final user = await DatabaseHelper.instance.getUser();
-                      final String employeeId = user?['name'] ?? 'Teja';
+                        await DatabaseHelper.instance.insertExpense(expense);
+                        
+                        // Fetch Current Position for MQTT
+                        final Position currentPos = await Geolocator.getCurrentPosition();
+                        final LatLng dest = companySites[selectedSite!]!;
 
-                      // Publish via MQTT using standardized helper function
-                      mqttClient.publishExpense(selectedCategory, descController.text, amount, employeeId);
+                        // Calculate Road Distance again for payload
+                        double straightLineMeters = Geolocator.distanceBetween(
+                          currentPos.latitude, currentPos.longitude, dest.latitude, dest.longitude);
+                        double roadDistanceKm = (straightLineMeters * 1.3) / 1000;
 
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully!')));
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: const Text('Submit Travel Log', style: TextStyle(color: Colors.white, fontSize: 16)),
+                        // Fetch user info for MQTT payload
+                        final user = await DatabaseHelper.instance.getUser();
+                        final String employeeId = user?['name'] ?? 'Teja';
+
+                        // Publish via MQTT with route info
+                        mqttClient.publishTravelExpense(
+                          amount: amount,
+                          description: "${visitType}: ${descController.text}",
+                          visitType: visitType,
+                          srcLat: currentPos.latitude,
+                          srcLng: currentPos.longitude,
+                          destLat: dest.latitude,
+                          destLng: dest.longitude,
+                          distanceKm: double.parse(roadDistanceKm.toStringAsFixed(2)),
+                          employeeId: employeeId,
+                        );
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully!')));
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: const Text('Submit Travel Log', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     ),
   );
 }
@@ -743,51 +871,120 @@ void _showWorkService(BuildContext context) {
   );
 }
 
+void _generateWorkReport(BuildContext context) async {
+  final DateTimeRange? picked = await showDateRangePicker(
+    context: context,
+    initialDateRange: DateTimeRange(
+      start: DateTime.now().subtract(const Duration(days: 7)),
+      end: DateTime.now(),
+    ),
+    firstDate: DateTime(2020),
+    lastDate: DateTime.now(),
+    builder: (context, child) {
+      return Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.light(
+            primary: Colors.blue[800]!,
+            onPrimary: Colors.white,
+            onSurface: Colors.black,
+          ),
+        ),
+        child: child!,
+      );
+    },
+  );
+
+  if (picked != null) {
+    final String total = await DatabaseHelper.instance.calculateHoursInRange(picked.start, picked.end);
+    
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.analytics, color: Colors.blue),
+              SizedBox(width: 10),
+              Text('Work Report'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Period:', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              Text(
+                '${DateFormat('MMM dd, yyyy').format(picked.start)} - ${DateFormat('MMM dd, yyyy').format(picked.end)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 10),
+              const Text('Total Worked:', style: TextStyle(fontSize: 14)),
+              Text(
+                total,
+                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+}
+
 void _showTimeTrackerService(BuildContext context) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
     builder: (context) => Container(
-      height: MediaQuery.of(context).size.height * 0.8,
+      height: MediaQuery.of(context).size.height * 0.5, // Reduced height since list is removed
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios, size: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back_ios, size: 20),
+              ),
+              const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 40), // Balance the back button
+            ],
           ),
-          const SizedBox(height: 10),
-          const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
           const RealTimeTimeLogs(),
+          const SizedBox(height: 30),
+          
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton.icon(
+              onPressed: () => _generateWorkReport(context),
+              icon: const Icon(Icons.summarize_outlined),
+              label: const Text('Generate Work Report', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[800],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
-
-          Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: DatabaseHelper.instance.getTimeLogs(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                if (snapshot.data!.isEmpty) return _buildEmptyState('No non-office time logs yet.');
-                
-                return ListView.builder(
-                  itemCount: snapshot.data!.length,
-                  itemBuilder: (context, index) {
-                    final log = snapshot.data![index];
-                    return _buildAnimatedCard(
-                      Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          title: Text(log['task'] ?? 'Task'),
-                          subtitle: Text('${log['description']} • ${log['date']}'),
-                          trailing: Text('${log['hours']}h', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
+          Center(
+            child: Text(
+              'Select a date range to view your total logs.',
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
             ),
           ),
         ],
@@ -799,9 +996,17 @@ void _showTimeTrackerService(BuildContext context) {
 void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) {
   final Map<String, TextEditingController> controllers = {};
   
-  void saveExpense(String type, String category, String description, String amount) async {
+  Future<void> saveExpense(String type, String category, String description, String amount, File? imageFile) async {
     double? amt = double.tryParse(amount);
     if (amt == null || amt <= 0) return;
+
+    String? savedImagePath;
+    if (imageFile != null) {
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'bill_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
+      final savedImage = await imageFile.copy('${directory.path}/$fileName');
+      savedImagePath = savedImage.path;
+    }
 
     final Map<String, dynamic> expense = {
       'type': type,
@@ -809,7 +1014,8 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
       'description': description,
       'amount': amt,
       'date': DateTime.now().toIso8601String(),
-      'status': 'Pending'
+      'status': 'Pending',
+      'bill_image': savedImagePath
     };
 
     int id = await DatabaseHelper.instance.insertExpense(expense);
@@ -850,13 +1056,12 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
                 ],
               ),
               const SizedBox(height: 24),
-              _buildExpenseSection(context, 'Material Expenses', 'Material', controllers, (cat, desc, amt) {
-                saveExpense('Material', cat, desc, amt);
-              }),
-              const SizedBox(height: 24),
-              _buildExpenseSection(context, 'Fuel Expenses', 'Fuel', controllers, (cat, desc, amt) {
-                saveExpense('Fuel', cat, desc, amt);
-              }),
+              ExpenseSection(
+                title: 'Material Expenses', 
+                typeKey: 'Material', 
+                controllers: controllers, 
+                onAdd: (cat, desc, amt, img) => saveExpense('Material', cat, desc, amt, img)
+              ),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
@@ -883,82 +1088,74 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
   );
 }
 
-Widget _buildExpenseSection(
-  BuildContext context, 
-  String title, 
-  String typeKey,
-  Map<String, TextEditingController> controllers,
-  Function(String category, String desc, String amount) onAdd,
-  {List<String>? subTypes}
-) {
-  // Use unique keys for controllers
-  final descKey = '${typeKey}_desc';
-  final amtKey = '${typeKey}_amt';
-  
-  controllers.putIfAbsent(descKey, () => TextEditingController());
-  controllers.putIfAbsent(amtKey, () => TextEditingController());
-  
-  if (subTypes != null) {
-    for (var sub in subTypes) {
-      controllers.putIfAbsent('${typeKey}_$sub', () => TextEditingController());
+class ExpenseSection extends StatefulWidget {
+  final String title;
+  final String typeKey;
+  final Map<String, TextEditingController> controllers;
+  final Function(String category, String desc, String amount, File? image) onAdd;
+  final List<String>? subTypes;
+
+  const ExpenseSection({
+    super.key,
+    required this.title,
+    required this.typeKey,
+    required this.controllers,
+    required this.onAdd,
+    this.subTypes,
+  });
+
+  @override
+  State<ExpenseSection> createState() => _ExpenseSectionState();
+}
+
+class _ExpenseSectionState extends State<ExpenseSection> {
+  File? _billImage;
+  final ImagePicker _picker = ImagePicker();
+
+  Future<void> _captureImage() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+    if (photo != null) {
+      setState(() {
+        _billImage = File(photo.path);
+      });
     }
   }
 
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-          TextButton.icon(
-            onPressed: () {
-              if (subTypes != null) {
-                for (var sub in subTypes) {
-                  final subAmt = controllers['${typeKey}_$sub']?.text ?? '';
-                  if (subAmt.isNotEmpty) {
-                    onAdd(sub, 'Auto-added $sub', subAmt);
-                    controllers['${typeKey}_$sub']?.clear();
-                  }
-                }
-              } else {
-                onAdd(title, controllers[descKey]?.text ?? '', controllers[amtKey]?.text ?? '');
-                controllers[descKey]?.clear();
-                controllers[amtKey]?.clear();
-              }
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$title added to records')));
-            },
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add'),
-            style: TextButton.styleFrom(foregroundColor: Colors.blue),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      if (subTypes != null) ...[
-        ...subTypes.map((sub) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: TextField(
-            controller: controllers['${typeKey}_$sub'],
-            decoration: InputDecoration(
-                          labelText: sub,
-                          hintText: 'Enter $sub amount',
-                          prefixText: '₹ ',
-                          filled: true,
-              
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+  @override
+  Widget build(BuildContext context) {
+    final descKey = '${widget.typeKey}_desc';
+    final amtKey = '${widget.typeKey}_amt';
+    
+    widget.controllers.putIfAbsent(descKey, () => TextEditingController());
+    widget.controllers.putIfAbsent(amtKey, () => TextEditingController());
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+            TextButton.icon(
+              onPressed: () {
+                widget.onAdd(widget.title, widget.controllers[descKey]!.text, widget.controllers[amtKey]!.text, _billImage);
+                widget.controllers[descKey]!.clear();
+                widget.controllers[amtKey]!.clear();
+                setState(() => _billImage = null);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${widget.title} added to records')));
+              },
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+              style: TextButton.styleFrom(foregroundColor: Colors.blue),
             ),
-            keyboardType: TextInputType.number,
-          ),
-        )),
-      ] else ...[
+          ],
+        ),
+        const SizedBox(height: 12),
         TextField(
-          controller: controllers[descKey],
+          controller: widget.controllers[descKey],
           decoration: InputDecoration(
             labelText: 'Description',
-            hintText: 'Enter $title details',
+            hintText: 'Enter ${widget.title} details',
             filled: true,
             fillColor: Colors.grey[50],
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
@@ -967,7 +1164,7 @@ Widget _buildExpenseSection(
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: controllers[amtKey],
+          controller: widget.controllers[amtKey],
           decoration: InputDecoration(
             labelText: 'Amount',
             hintText: 'Enter amount',
@@ -979,9 +1176,35 @@ Widget _buildExpenseSection(
           ),
           keyboardType: TextInputType.number,
         ),
+        const SizedBox(height: 12),
+        if (_billImage == null)
+          OutlinedButton.icon(
+            onPressed: _captureImage,
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: const Text('📷 Capture Bill'),
+            style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          )
+        else
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(_billImage!, width: 60, height: 60, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 12),
+              const Text('Bill Captured ✅', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(
+                onPressed: () => setState(() => _billImage = null),
+                icon: const Icon(Icons.cancel, color: Colors.red),
+              ),
+            ],
+          ),
       ],
-    ],
-  );
+    );
+  }
 }
 
 void _showChatbotService(BuildContext context) {
@@ -1760,3 +1983,33 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
   );
 }
 
+Future<void> _calculateTripCost(
+  String? site,
+  Map<String, LatLng> sites,
+  TextEditingController priceCtrl,
+  TextEditingController mileageCtrl,
+  TextEditingController amtCtrl,
+  Function(String) onResult,
+) async {
+  if (site == null) return;
+
+  final dest = sites[site];
+  if (dest == null) return;
+
+  final Position pos = await Geolocator.getCurrentPosition();
+  double straightDistance = Geolocator.distanceBetween(
+      pos.latitude, pos.longitude, dest.latitude, dest.longitude);
+
+  // Road Factor Formula
+  double roadDistanceKm = (straightDistance * 1.3) / 1000;
+
+  double mileage = double.tryParse(mileageCtrl.text) ?? 35.0;
+  double price = double.tryParse(priceCtrl.text) ?? 103.0;
+
+  double liters = roadDistanceKm / mileage;
+  double cost = liters * price;
+
+  amtCtrl.text = cost.toStringAsFixed(2);
+  onResult(
+      "Est. Distance: ${roadDistanceKm.toStringAsFixed(1)}km | Fuel: ${liters.toStringAsFixed(2)}L");
+}
