@@ -5,7 +5,6 @@ import 'dart:io';
 import './screens/home.dart';
 import './screens/welcome_screen.dart';
 import './screens/login_screen.dart';
-import 'network/mqtt.dart';
 import 'database/db_helper.dart';
 
 void main() async {
@@ -70,7 +69,7 @@ class MyApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {
           return MaterialPageRoute(
-            builder: (context) => HomePage(mqttClient: MQTTClientWrapper()),
+            builder: (context) => const HomePage(),
           );
         }
         return null;

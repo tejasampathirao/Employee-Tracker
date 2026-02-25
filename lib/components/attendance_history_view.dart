@@ -186,7 +186,24 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color = status == 'Completed' ? Colors.green : (status == 'Active' ? Colors.orange : Colors.red);
+    Color color;
+    switch (status) {
+      case 'Present':
+        color = Colors.green;
+        break;
+      case 'Incomplete':
+      case 'Short Day':
+        color = Colors.orange;
+        break;
+      case 'Active':
+        color = Colors.blue;
+        break;
+      case 'Failed':
+        color = Colors.red;
+        break;
+      default:
+        color = Colors.grey;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

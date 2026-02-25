@@ -1,7 +1,6 @@
 import 'package:geolocator/geolocator.dart';
-import 'mqtt.dart';
+import '../services/mqtt_handler.dart';
 import 'dart:async';
-import 'dart:convert';
 import '../constants.dart';
 import '../database/db_helper.dart';
 
@@ -11,7 +10,7 @@ class LocationService {
   LocationService._internal();
 
   StreamSubscription<Position>? _positionStreamSubscription;
-  MQTTClientWrapper? _mqttClient;
+  MqttHandler? _mqttClient;
   Function()? _onExitedOffice;
   double? _refLat;
   double? _refLng;
@@ -40,7 +39,7 @@ class LocationService {
     return true;
   }
 
-  void startTracking(MQTTClientWrapper mqttClient, {double? centerLat, double? centerLng, Function()? onExitedOffice}) async {
+  void startTracking(MqttHandler mqttClient, {double? centerLat, double? centerLng, Function()? onExitedOffice}) async {
     _mqttClient = mqttClient;
     _onExitedOffice = onExitedOffice;
     _refLat = centerLat;
@@ -106,14 +105,12 @@ class LocationService {
   }
 
   void _sendLocationUpdate(Position position) {
-    if (_mqttClient != null && _mqttClient!.connectionState == MqttCurrentConnectionState.connected) {
-      final data = {
-        'lat': position.latitude,
-        'lng': position.longitude,
-        'timestamp': DateTime.now().toIso8601String(),
-        'userId': 'user_123', // Hardcoded for now
-      };
-      _mqttClient!.publishMessage(jsonEncode(data), topic: '/location/updates');
+    if (_mqttClient != null) {
+      _mqttClient!.publishLocationUpdate(
+        position.latitude,
+        position.longitude,
+        position.speed,
+      );
     }
   }
 }

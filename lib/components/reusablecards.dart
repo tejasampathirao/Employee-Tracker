@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart'; // THIS LINE FIXES THE ERRORS
-import '../network/mqtt.dart';
+import '../services/mqtt_handler.dart';
 import 'dart:async';
 
 class ReusableCard extends StatefulWidget {
@@ -13,7 +13,7 @@ class ReusableCard extends StatefulWidget {
 
   final Color colour;
   final String text;
-  final MQTTClientWrapper mqttClient;
+  final MqttHandler mqttClient;
   final List<String> topics;
 
   @override

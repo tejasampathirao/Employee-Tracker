@@ -35,9 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.blue[900]!.withOpacity(0.05),
+              Colors.blue[900]!.withValues(alpha: 0.05),
               Colors.white,
-              Colors.green[50]!.withOpacity(0.3),
+              Colors.green[50]!.withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -59,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: Colors.white,
                         shape: BoxShape.circle,
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
                         ],
                       ),
                       child: const Icon(Icons.arrow_back_ios_new, color: Colors.blue, size: 20),
@@ -116,7 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.blue[800]!.withOpacity(0.3),
+                                color: Colors.blue[800]!.withValues(alpha: 0.3),
                                 blurRadius: 20,
                                 offset: const Offset(0, 10),
                               ),
@@ -177,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),

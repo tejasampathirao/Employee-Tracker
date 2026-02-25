@@ -60,7 +60,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     _nameController.text,
                     _detailsController.text,
                   );
-                  if (mounted) {
+                  if (context.mounted) {
                     Navigator.pop(context, true); // Return true to indicate update
                   }
                 },

@@ -22,6 +22,6 @@ const kTextStyleForm = TextStyle(
 );
 
 // Geofencing Constants
-const double kOfficeLatitude = 17.4483; // Example: Hyderabad Office
-const double kOfficeLongitude = 78.3915;
+const double kOfficeLatitude = 13.0022; // Example:Office
+const double kOfficeLongitude = 77.4965;
 const double kGeofenceRadiusMeter = 100.0; // 100 meters radius

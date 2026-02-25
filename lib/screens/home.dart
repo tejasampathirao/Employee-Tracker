@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart'; // THIS LINE FIXES THE "UNDEFINED WIDGET" ERRORS
 import 'dart:async';
-import '../network/mqtt.dart';
+import 'package:mqtt_client/mqtt_client.dart';
+import '../services/mqtt_handler.dart';
 import '../components/home_widgets.dart';
 import '../components/attendance_history_view.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.mqttClient});
+  const HomePage({super.key});
   static const String id = 'home';
-  final MQTTClientWrapper mqttClient;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -15,34 +15,44 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  late StreamSubscription<Map<String, String>> _mqttSubscription;
+  StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>? _mqttSubscription;
+  final MqttHandler mqttClient = MqttHandler();
 
   @override
   void initState() {
     super.initState();
-    // Listen to MQTT messages to update UI in real-time
-    _mqttSubscription = widget.mqttClient.messageStream.listen((data) {
-      if (mounted) {
-        String topic = data.keys.first;
-        String message = data.values.first;
+    _connectAndListen();
+  }
 
-        // Visual Feedback for Closed-Loop Test
-        if (topic == 'hr/leaves') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('MQTT RECEIVED: $message'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        } else if (topic == '/expenses/updates') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Colors.blue,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+  void _connectAndListen() async {
+    await mqttClient.connect();
+    
+    // Listen to MQTT messages to update UI in real-time
+    _mqttSubscription = mqttClient.updates?.listen((messages) {
+      if (mounted && messages.isNotEmpty) {
+        for (final message in messages) {
+          final String topic = message.topic;
+          final MqttPublishMessage recMess = message.payload as MqttPublishMessage;
+          final String content = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+
+          // Visual Feedback for Closed-Loop Test
+          if (topic == 'hr/leaves') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('MQTT RECEIVED: $content'),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          } else if (topic == '/expenses/updates' || topic == 'employee/tracker') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('MQTT Update ($topic): $content'),
+                backgroundColor: Colors.blue,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         }
         setState(() {}); // Refresh dashboard on any message
       }
@@ -51,7 +61,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _mqttSubscription.cancel();
+    _mqttSubscription?.cancel();
     super.dispose();
   }
 
@@ -93,10 +103,10 @@ class _HomePageState extends State<HomePage> {
           child: IndexedStack(
             index: _selectedIndex,
             children: [
-              homeListView(context, widget.mqttClient, () => setState(() {})),
-              servicesView(context, widget.mqttClient, () => setState(() {})),
+              homeListView(context, mqttClient, () => setState(() {})),
+              servicesView(context, mqttClient, () => setState(() {})),
               const AttendanceHistoryView(),
-              profileView(context, widget.mqttClient, () => setState(() {})),
+              profileView(context, mqttClient, () => setState(() {})),
             ],
           ),
         ),

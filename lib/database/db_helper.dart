@@ -276,6 +276,123 @@ class DatabaseHelper {
     return await db.query('attendance', orderBy: 'id DESC');
   }
 
+  Future<Map<String, double>> getAttendanceSummary() async {
+    final db = await instance.database;
+    final all = await db.query('attendance', where: 'checkOutTime IS NOT NULL');
+    
+    double todayTotal = 0;
+    double weekTotal = 0;
+    double monthTotal = 0;
+
+    final now = DateTime.now();
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
+    final weekAgo = now.subtract(const Duration(days: 7));
+    final firstOfMonth = DateTime(now.year, now.month, 1);
+
+    for (var row in all) {
+      final checkIn = DateTime.parse(row['checkInTime'] as String);
+      final checkOut = DateTime.parse(row['checkOutTime'] as String);
+      final duration = checkOut.difference(checkIn).inSeconds / 3600.0;
+      final date = row['date'] as String;
+
+      if (date == todayStr) todayTotal += duration;
+      if (checkIn.isAfter(weekAgo)) weekTotal += duration;
+      if (checkIn.isAfter(firstOfMonth)) monthTotal += duration;
+    }
+
+    return {
+      'today': todayTotal,
+      'week': weekTotal,
+      'month': monthTotal,
+    };
+  }
+
+  Future<Map<String, double>> getOvertimeStats() async {
+    final db = await instance.database;
+    // We query all records to support real-time OT for active sessions
+    final all = await db.query('attendance');
+    
+    double todayOT = 0;
+    double weekOT = 0;
+    double monthOT = 0;
+
+    final now = DateTime.now();
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
+    final weekAgo = now.subtract(const Duration(days: 7));
+    final firstOfMonth = DateTime(now.year, now.month, 1);
+
+    for (var row in all) {
+      final checkIn = DateTime.parse(row['checkInTime'] as String);
+      final checkOutStr = row['checkOutTime'] as String?;
+      
+      // Step 1: Parse/Determine Check-Out Time
+      // For active sessions, we use DateTime.now() if it's today's log.
+      DateTime? checkOut;
+      if (checkOutStr != null) {
+        checkOut = DateTime.parse(checkOutStr);
+      } else if (row['date'] == todayStr) {
+        checkOut = now;
+      }
+
+      if (checkOut != null) {
+        // Step 2: Define the Threshold (5:30 PM on that specific day)
+        final shiftEnd = DateTime(checkIn.year, checkIn.month, checkIn.day, 17, 30);
+
+        // Step 3: Calculate the Difference
+        // Rule: Any work done AFTER 5:30 PM is considered Overtime.
+        if (checkOut.isAfter(shiftEnd)) {
+          // If the employee checked in AFTER 5:30 PM, OT only starts from their check-in time.
+          final otStartTime = checkIn.isAfter(shiftEnd) ? checkIn : shiftEnd;
+          final double sessionOT = checkOut.difference(otStartTime).inSeconds / 3600.0;
+
+          final date = row['date'] as String;
+          if (date == todayStr) todayOT += sessionOT;
+          if (checkIn.isAfter(weekAgo)) weekOT += sessionOT;
+          if (checkIn.isAfter(firstOfMonth)) monthOT += sessionOT;
+        }
+      }
+    }
+
+    return {
+      'today': todayOT,
+      'week': weekOT,
+      'month': monthOT,
+    };
+  }
+
+  Future<int> markYesterdayPresent() async {
+    final db = await instance.database;
+    final yesterdayDate = DateTime.now().subtract(const Duration(days: 1));
+    final yesterdayStr = DateFormat('yyyy-MM-dd').format(yesterdayDate);
+    
+    // We update the status to 'Present' and ensure check-in/out times reflect a 9-hour shift
+    int count = await db.update(
+      'attendance',
+      {
+        'status': 'Present',
+        'checkInTime': '${yesterdayStr}T09:00:00.000',
+        'checkOutTime': '${yesterdayStr}T18:00:00.000',
+      },
+      where: 'date = ?',
+      whereArgs: [yesterdayStr],
+    );
+
+    debugPrint("Developer Fix: Rows updated for $yesterdayStr: $count");
+    return count;
+  }
+
+  Future<int> cleanDuplicateLogs() async {
+    final db = await instance.database;
+    // Requirement 2: Delete incomplete logs shorter than 60 seconds
+    // Uses SQLite julianday to calculate difference in seconds
+    return await db.rawDelete('''
+      DELETE FROM attendance 
+      WHERE status = 'Incomplete' 
+      AND checkOutTime IS NOT NULL 
+      AND (julianday(checkOutTime) - julianday(checkInTime)) * 86400 < 60
+    ''');
+  }
+
   // --- Approvals Methods ---
   Future<int> insertApproval(Map<String, dynamic> approval) async {
     final db = await instance.database;

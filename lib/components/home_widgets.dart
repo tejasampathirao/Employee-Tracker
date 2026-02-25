@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:mqtt_client/mqtt_client.dart';
 import 'dart:async';
-import '../network/mqtt.dart';
+import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
 import 'attendance_card.dart';
 import 'attendance_history_view.dart';
@@ -11,11 +12,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../screens/profile_edit_screen.dart';
+import 'overtime_calculator_card.dart';
 
 Widget getDrawerWidget(
   int index,
   BuildContext context,
-  MQTTClientWrapper mqttClient,
+  MqttHandler mqttClient,
   Function updateState,
 ) {
   switch (index) {
@@ -58,7 +60,8 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
   }
 
   Future<void> _loadInitialData() async {
-    final stats = await DatabaseHelper.instance.getTimeLogStats();
+    // Requirement 2: Fetch cumulative stats from attendance table
+    final stats = await DatabaseHelper.instance.getAttendanceSummary();
     final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
     if (mounted) {
       setState(() {
@@ -111,7 +114,7 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
 // Update homeListView to use RealTimeTimeLogs
 Widget homeListView(
   BuildContext context,
-  MQTTClientWrapper mqttClient,
+  MqttHandler mqttClient,
   Function updateState,
 ) {
   return SingleChildScrollView(
@@ -125,7 +128,6 @@ Widget homeListView(
         _buildGreetingSection(),
         const SizedBox(height: 20),
         AttendanceCard(
-          mqttClient: mqttClient, 
           onActionComplete: () => updateState(),
         ),
         const SizedBox(height: 24),
@@ -141,7 +143,8 @@ Widget homeListView(
   );
 }
 
-Widget _buildHeader(MQTTClientWrapper mqttClient, Function updateState) {
+
+Widget _buildHeader(MqttHandler mqttClient, Function updateState) {
   final List<String> hrTopics = ['/attendance/live', '/leave/updates', '/payroll/status', '/expenses/updates', 'hr/leaves'];
   return Row(
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -269,7 +272,7 @@ Widget _buildEmptyState(String message) {
 }
 
 // --- SERVICES VIEW ---
-Widget servicesView(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
+Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updateState) {
   final List<Map<String, dynamic>> services = [
     {'title': 'Attendance', 'icon': Icons.location_on, 'color': Colors.green, 'desc': 'Check-in and history'},
     {'title': 'Work', 'icon': Icons.work, 'color': Colors.indigo, 'desc': 'Log daily work and meetings'},
@@ -315,7 +318,34 @@ Widget servicesView(BuildContext context, MQTTClientWrapper mqttClient, Function
 
 // --- Detailed Service Views ---
 
-void _showAttendanceService(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
+Color _buildAttendanceStatusColor(DateTime day, String? status) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final checkDay = DateTime(day.year, day.month, day.day);
+
+  // Priority 1: Future Dates
+  if (checkDay.isAfter(today)) {
+    return Colors.grey[300]!;
+  }
+
+  // Priority 2: Weekends
+  if (day.weekday == DateTime.saturday || day.weekday == DateTime.sunday) {
+    return Colors.black;
+  }
+
+  // Priority 3: Check Database Status (CRITICAL STEP)
+  if (status == 'Present') return Colors.green;
+  if (status == 'Incomplete') return Colors.orange;
+
+  // Priority 4: The "No Record" Fallback
+  if (checkDay.isAtSameMomentAs(today)) {
+    return Colors.orange; // Today - assuming active/start of day
+  } else {
+    return Colors.red; // Past day - Absent
+  }
+}
+
+void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Function updateState) {
   final now = DateTime.now();
   final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
   final firstDayOffset = DateTime(now.year, now.month, 1).weekday % 7;
@@ -327,106 +357,142 @@ void _showAttendanceService(BuildContext context, MQTTClientWrapper mqttClient, 
     builder: (context) => Container(
       height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios, size: 20),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  'Attendance: ${DateFormat('MMMM yyyy').format(now)}', 
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_ios, size: 20),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Attendance: ${DateFormat('MMMM yyyy').format(now)}', 
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)
+                  ),
                 ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _showLeaveService(context, mqttClient, updateState),
-                icon: const Icon(Icons.calendar_today, size: 16),
-                label: const Text('Manage Leaves'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[50],
-                  foregroundColor: Colors.blue,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ElevatedButton.icon(
+                  onPressed: () => _showLeaveService(context, mqttClient, updateState),
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: const Text('Manage Leaves'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[50],
+                    foregroundColor: Colors.blue,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: DatabaseHelper.instance.getAllAttendance(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
+              ],
+            ),
+            const SizedBox(height: 20),
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: DatabaseHelper.instance.getAllAttendance(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const SizedBox.shrink();
 
-              final currentMonthStr = DateFormat('yyyy-MM').format(now);
-              final monthlyData = snapshot.data!.where((e) => e['date'].startsWith(currentMonthStr)).toList();
-              final presentDates = monthlyData.map((e) => e['date']).toSet();
-              
-              int daysPresent = presentDates.length;
-              int totalDaysPassed = now.day;
-              int daysAbsent = totalDaysPassed - daysPresent;
-              if (daysAbsent < 0) daysAbsent = 0;
+                final currentMonthStr = DateFormat('yyyy-MM').format(now);
+                final monthlyData = snapshot.data!.where((e) => e['date'].startsWith(currentMonthStr)).toList();
+                
+                // Requirement 1: Day-Based Processing (Unique Dates)
+                Map<String, String> dailyStatus = {};
+                for (var log in monthlyData) {
+                  String date = log['date'];
+                  String status = log['status'] ?? 'Incomplete';
+                  if (log['checkOutTime'] == null) status = 'Active';
 
-              double presentPct = totalDaysPassed > 0 ? (daysPresent / totalDaysPassed) * 100 : 0;
-              double absentPct = 100 - presentPct;
+                  // Priority: Present > Incomplete/Active
+                  if (dailyStatus[date] == 'Present') continue;
+                  dailyStatus[date] = status;
+                }
 
-              return Column(
-                children: [
-                  SizedBox(
-                    height: 180,
-                    child: PieChart(
-                      PieChartData(
-                        sectionsSpace: 4,
-                        centerSpaceRadius: 40,
-                        sections: [
-                          PieChartSectionData(
-                            color: Colors.green,
-                            value: presentPct,
-                            title: '${presentPct.toStringAsFixed(0)}%',
-                            radius: 50,
-                            titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                          PieChartSectionData(
-                            color: Colors.orange,
-                            value: absentPct,
-                            title: '${absentPct.toStringAsFixed(0)}%',
-                            radius: 50,
-                            titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                        ],
+                int daysPresent = dailyStatus.values.where((v) => v == 'Present').length;
+                int daysIncomplete = dailyStatus.values.where((v) => v == 'Incomplete' || v == 'Active').length;
+                
+                // Filter out weekends from total days for accurate absent count
+                int totalDaysPassed = 0;
+                for (int i = 1; i <= now.day; i++) {
+                  final d = DateTime(now.year, now.month, i);
+                  if (d.weekday != DateTime.saturday && d.weekday != DateTime.sunday) {
+                    totalDaysPassed++;
+                  }
+                }
+                
+                int daysAbsent = totalDaysPassed - (daysPresent + daysIncomplete);
+                if (daysAbsent < 0) daysAbsent = 0;
+
+                double total = (daysPresent + daysIncomplete + daysAbsent).toDouble();
+                if (total == 0) total = 1;
+
+                return Column(
+                  children: [
+                    SizedBox(
+                      height: 180,
+                      child: PieChart(
+                        PieChartData(
+                          sectionsSpace: 4,
+                          centerSpaceRadius: 40,
+                          sections: [
+                            PieChartSectionData(
+                              color: Colors.green,
+                              value: daysPresent.toDouble(),
+                              title: '${((daysPresent/total)*100).toStringAsFixed(0)}%',
+                              radius: 50,
+                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            PieChartSectionData(
+                              color: Colors.orange,
+                              value: daysIncomplete.toDouble(),
+                              title: '${((daysIncomplete/total)*100).toStringAsFixed(0)}%',
+                              radius: 50,
+                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            PieChartSectionData(
+                              color: Colors.red,
+                              value: daysAbsent.toDouble(),
+                              title: '${((daysAbsent/total)*100).toStringAsFixed(0)}%',
+                              radius: 50,
+                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _LegendItem(color: Colors.green, label: 'Present: $daysPresent'),
-                      const SizedBox(width: 20),
-                      _LegendItem(color: Colors.orange, label: 'Absent: $daysAbsent'),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              );
-            },
-          ),
-          Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _LegendItem(color: Colors.green, label: 'Present: $daysPresent'),
+                        const SizedBox(width: 10),
+                        _LegendItem(color: Colors.orange, label: 'Incomplete: $daysIncomplete'),
+                        const SizedBox(width: 10),
+                        _LegendItem(color: Colors.red, label: 'Absent: $daysAbsent'),
+                        const SizedBox(width: 10),
+                        _LegendItem(color: Colors.black, label: 'Weekend'),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                );
+              },
+            ),
+            FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                 
-                final presentDates = snapshot.data!
-                    .map((e) => DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date'])))
-                    .toSet();
+                final statusMap = {
+                  for (var e in snapshot.data!) 
+                    DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date'])): (e['checkOutTime'] == null ? 'Active' : e['status'])
+                };
 
                 return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 7,
                     mainAxisSpacing: 8,
@@ -439,19 +505,25 @@ void _showAttendanceService(BuildContext context, MQTTClientWrapper mqttClient, 
                     final day = index - firstDayOffset + 1;
                     final date = DateTime(now.year, now.month, day);
                     final dateStr = DateFormat('yyyy-MM-dd').format(date);
-                    final isPresent = presentDates.contains(dateStr);
+                    final status = statusMap[dateStr];
                     final isToday = date.day == now.day && date.month == now.month && date.year == now.year;
+                    final isFuture = date.isAfter(DateTime.now());
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: isPresent ? Colors.green : Colors.orange.withValues(alpha: 0.8),
+                        color: _buildAttendanceStatusColor(date, status),
                         borderRadius: BorderRadius.circular(8),
                         border: isToday ? Border.all(color: Colors.blue, width: 2) : null,
                       ),
                       child: Center(
                         child: Text(
                           '$day',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: (date.weekday == DateTime.saturday || date.weekday == DateTime.sunday || isFuture) 
+                                ? Colors.grey[600] 
+                                : Colors.white,
+                            fontWeight: FontWeight.bold
+                          ),
                         ),
                       ),
                     );
@@ -459,19 +531,21 @@ void _showAttendanceService(BuildContext context, MQTTClientWrapper mqttClient, 
                 );
               },
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _LegendItem(color: Colors.green, label: 'Present'),
-                _LegendItem(color: Colors.orange, label: 'Absent'),
-                _LegendItem(color: Colors.blue, label: 'Today', isBorder: true),
-              ],
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _LegendItem(color: Colors.green, label: 'Present'),
+                  _LegendItem(color: Colors.orange, label: 'Incomplete'),
+                  _LegendItem(color: Colors.blue, label: 'Today', isBorder: true),
+                ],
+              ),
             ),
-          ),
-        ],
+            const OvertimeCalculatorCard(),
+            const SizedBox(height: 30),
+          ],
+        ),
       ),
     ),
   );
@@ -502,7 +576,7 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-void _showTravelExpenseService(BuildContext context, MQTTClientWrapper mqttClient) {
+void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
   final TextEditingController descController = TextEditingController();
   final TextEditingController amtController = TextEditingController();
   String selectedCategory = 'Onsite';
@@ -568,17 +642,24 @@ void _showTravelExpenseService(BuildContext context, MQTTClientWrapper mqttClien
                         return;
                       }
 
+                      final amount = double.tryParse(amtController.text) ?? 0.0;
                       final expense = {
                         'type': 'Travel',
                         'category': selectedCategory,
                         'description': descController.text,
-                        'amount': double.tryParse(amtController.text) ?? 0.0,
+                        'amount': amount,
                         'date': DateTime.now().toIso8601String(),
                         'status': 'Pending'
                       };
 
                       await DatabaseHelper.instance.insertExpense(expense);
-                      mqttClient.publishMessage('Travel Expense: $selectedCategory - ${descController.text}', topic: '/expenses/updates');
+                      
+                      // Fetch user info for MQTT payload
+                      final user = await DatabaseHelper.instance.getUser();
+                      final String employeeId = user?['name'] ?? 'Teja';
+
+                      // Publish via MQTT using standardized helper function
+                      mqttClient.publishExpense(selectedCategory, descController.text, amount, employeeId);
 
                       if (context.mounted) {
                         Navigator.pop(context);
@@ -715,7 +796,7 @@ void _showTimeTrackerService(BuildContext context) {
   );
 }
 
-void _showExpenseApprovalsService(BuildContext context, MQTTClientWrapper mqttClient) {
+void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) {
   final Map<String, TextEditingController> controllers = {};
   
   void saveExpense(String type, String category, String description, String amount) async {
@@ -737,11 +818,12 @@ void _showExpenseApprovalsService(BuildContext context, MQTTClientWrapper mqttCl
     expense['id'] = id;
     await ReportService.appendExpenseToReport(expense);
     
-    // Publish via MQTT
-    mqttClient.publishMessage(
-      'New Expense: $category - ₹$amt for $description', 
-      topic: '/expenses/updates'
-    );
+    // Fetch user info for MQTT payload
+    final user = await DatabaseHelper.instance.getUser();
+    final String employeeId = user?['name'] ?? 'Teja';
+
+    // Publish via MQTT using standardized helper function
+    mqttClient.publishExpense(category, description, amt, employeeId);
   }
 
   showModalBottomSheet(
@@ -967,7 +1049,7 @@ Widget _buildChatBubble(String text, bool isUser) {
   );
 }
 
-Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MQTTClientWrapper mqttClient, Function updateState) {
+Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MqttHandler mqttClient, Function updateState) {
   return InkWell(
     onTap: () {
       switch (service['title']) {
@@ -1022,7 +1104,7 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MQT
 }
 
 
-void _showLeaveService(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
+void _showLeaveService(BuildContext context, MqttHandler mqttClient, Function updateState) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1038,42 +1120,41 @@ void _showLeaveService(BuildContext context, MQTTClientWrapper mqttClient, Funct
 }
 
 // --- SYSTEM CONTROLS ---
-Widget _buildSystemControls(MQTTClientWrapper mqttClient, List<String> hrTopics, Function updateState) {
+Widget _buildSystemControls(MqttHandler mqttClient, List<String> hrTopics, Function updateState) {
   return Row(
     children: [
-      if (mqttClient.connectionState == MqttCurrentConnectionState.connecting)
+      if (mqttClient.client.connectionStatus?.state == MqttConnectionState.connecting)
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
           child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
         ),
-      if (mqttClient.connectionState != MqttCurrentConnectionState.connected && mqttClient.connectionState != MqttCurrentConnectionState.connecting)
+      if (mqttClient.client.connectionStatus?.state != MqttConnectionState.connected && mqttClient.client.connectionStatus?.state != MqttConnectionState.connecting)
         IconButton(
           onPressed: () async {
             // Update UI to show loading state
             updateState(); 
-            await mqttClient.connectClient();
-            if (mqttClient.connectionState == MqttCurrentConnectionState.connected) {
-              mqttClient.subscribeToTopics(hrTopics);
-            }
+            await mqttClient.connect();
             // Update UI with final result
             updateState();
           },
           icon: Icon(
             Icons.link, 
-            color: mqttClient.connectionState == MqttCurrentConnectionState.errorWhenConnecting ? Colors.orange : const Color(0xff21b409)
+            color: mqttClient.client.connectionStatus?.state == MqttConnectionState.faulted ? Colors.orange : const Color(0xff21b409)
           ),
         ),
-      if (mqttClient.connectionState == MqttCurrentConnectionState.connected) ...[
+      if (mqttClient.client.connectionStatus?.state == MqttConnectionState.connected) ...[
         IconButton(
           onPressed: () {
-            mqttClient.subscribeToTopics(hrTopics);
+            for (var topic in hrTopics) {
+              mqttClient.subscribe(topic);
+            }
             updateState();
           },
           icon: const Icon(Icons.sync, color: Colors.blue),
         ),
         IconButton(
           onPressed: () {
-            mqttClient.client.disconnect();
+            mqttClient.disconnect();
             updateState();
           },
           icon: const Icon(Icons.link_off, color: Colors.red),
@@ -1085,7 +1166,7 @@ Widget _buildSystemControls(MQTTClientWrapper mqttClient, List<String> hrTopics,
 
 
 // --- PROFILE VIEW ---
-Widget profileView(BuildContext context, MQTTClientWrapper mqttClient, Function onUpdate) {
+Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpdate) {
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
@@ -1132,13 +1213,13 @@ Widget profileView(BuildContext context, MQTTClientWrapper mqttClient, Function 
             leading: const Icon(Icons.settings_outlined),
             title: const Text('Settings'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showSettings(context),
+            onTap: () => _showSettings(context, onUpdate),
           ),
           ListTile(
             leading: const Icon(Icons.power_settings_new, color: Colors.red),
             title: const Text('Logout', style: TextStyle(color: Colors.red)),
             onTap: () {
-              mqttClient.client.disconnect();
+              mqttClient.disconnect();
               Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
             },
           ),
@@ -1148,7 +1229,7 @@ Widget profileView(BuildContext context, MQTTClientWrapper mqttClient, Function 
   );
 }
 
-void _showSettings(BuildContext context) {
+void _showSettings(BuildContext context, Function onUpdate) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1186,6 +1267,28 @@ void _showSettings(BuildContext context) {
                 _buildSettingsSection('App Settings'),
                 _buildGeofenceSettingTile(context),
                 _buildOfficeLocationSettingTile(context),
+                const Divider(),
+                _buildSettingsSection('Developer Tools'),
+                ListTile(
+                  leading: const Icon(Icons.cleaning_services_outlined, color: Colors.blue),
+                  title: const Text('Clean Duplicate Logs'),
+                  subtitle: const Text('Delete test logs shorter than 1 min'),
+                  onTap: () async {
+                    int deleted = await DatabaseHelper.instance.cleanDuplicateLogs();
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(deleted > 0 
+                            ? 'Cleaned $deleted duplicate/short logs!' 
+                            : 'No short duplicate logs found.'),
+                          backgroundColor: Colors.blue,
+                        ),
+                      );
+                      onUpdate();
+                    }
+                  },
+                ),
                 const Divider(),
                 _buildSettingsSection('Support'),
                 _buildSettingsTile(Icons.description_outlined, 'Terms & Policies', 'Usage terms, Privacy policy'),
@@ -1448,7 +1551,7 @@ void _showGeofenceDialog(BuildContext context) async {
 }
 
 // --- LEAVE TRACKER (Used by Services) ---
-Widget _leaveTrackerView(BuildContext context, MQTTClientWrapper mqttClient, Function updateState) {
+Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function updateState) {
   return Padding(
     padding: const EdgeInsets.all(16.0),
     child: Column(
@@ -1516,7 +1619,7 @@ Widget _buildLeaveBalanceCard(String type, int available, int booked, Color colo
   );
 }
 
-void _showApplyLeaveForm(BuildContext context, MQTTClientWrapper mqttClient) {
+void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController reasonController = TextEditingController();
@@ -1626,8 +1729,18 @@ void _showApplyLeaveForm(BuildContext context, MQTTClientWrapper mqttClient) {
                       leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
 
-                      // CLOSED-LOOP TEST: Publish message to be received by Dashboard
-                      mqttClient.publishMessage('Leave Request Saved: $selectedLeaveType', topic: 'hr/leaves');
+                      // Fetch user info for MQTT payload
+                      final user = await DatabaseHelper.instance.getUser();
+                      final String employeeId = user?['name'] ?? 'Teja';
+
+                      // Publish using standardized helper function
+                      mqttClient.publishLeaveRequest(
+                        selectedLeaveType,
+                        fromDateController.text,
+                        toDateController.text,
+                        reasonController.text,
+                        employeeId,
+                      );
 
                       if (context.mounted) {
                         Navigator.pop(context);

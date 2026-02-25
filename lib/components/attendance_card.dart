@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../database/db_helper.dart';
 import 'package:intl/intl.dart';
-import '../network/mqtt.dart';
-import '../network/location_service.dart';
+import '../services/mqtt_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import '../constants.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -11,9 +10,8 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 
 class AttendanceCard extends StatefulWidget {
-  final MQTTClientWrapper mqttClient;
   final VoidCallback? onActionComplete;
-  const AttendanceCard({super.key, required this.mqttClient, this.onActionComplete});
+  const AttendanceCard({super.key, this.onActionComplete});
 
   @override
   State<AttendanceCard> createState() => _AttendanceCardState();
@@ -25,15 +23,44 @@ class _AttendanceCardState extends State<AttendanceCard> {
   Timer? _timer;
   Duration _duration = Duration.zero;
   int? _currentAttendanceId;
-  double? _checkInLat;
-  double? _checkInLng;
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  late MqttHandler mqttService;
+
+  // Geofencing and History logic
+  StreamSubscription<Position>? _positionStream;
 
   @override
   void initState() {
     super.initState();
     _initializeNotifications();
     _loadLastAttendance();
+    _setupMqtt();
+
+    // Requirement 2: Setup live geofence listener
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((Position position) {
+      if (_isCheckedIn) {
+        double distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          kOfficeLatitude,
+          kOfficeLongitude,
+        );
+        // Requirement 2: IF distance > 100m AND checked-in, trigger auto-checkout
+        if (distance > 100) {
+          _handleCheckInOut(isAuto: true);
+        }
+      }
+    });
+  }
+
+  void _setupMqtt() async {
+    mqttService = MqttHandler();
+    await mqttService.connect();
   }
 
   Future<void> _initializeNotifications() async {
@@ -70,8 +97,45 @@ class _AttendanceCardState extends State<AttendanceCard> {
     );
   }
 
+  // Requirement 2: Schedule Reminder for 5:30 PM
+  Future<void> _scheduleShiftEndReminder() async {
+    final now = DateTime.now();
+    var scheduledDate = DateTime(now.year, now.month, now.day, 17, 30); // 5:30 PM Today
+
+    // If it's already past 5:30 PM, don't schedule for today
+    if (now.isAfter(scheduledDate)) return;
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      1, // Unique ID for shift end
+      'Shift Ended 🕠',
+      'Don\'t forget to mark your attendance checkout!',
+      tz.TZDateTime.from(scheduledDate, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'shift_end_reminder',
+          'Shift End Reminders',
+          channelDescription: 'Reminders to check out at end of shift',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  // Requirement 3: Cancel Logic
+  Future<void> _cancelShiftEndReminder() async {
+    await flutterLocalNotificationsPlugin.cancel(1);
+  }
+
   Future<void> _loadLastAttendance() async {
     final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
+    
+    // Load local history list
+    await DatabaseHelper.instance.getAllAttendance();
+
     if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
       setState(() {
         _isCheckedIn = true;
@@ -80,13 +144,7 @@ class _AttendanceCardState extends State<AttendanceCard> {
         _startTimer();
       });
       // Resume location tracking if already checked in
-      LocationService().startTracking(widget.mqttClient, onExitedOffice: _autoCheckOut);
-    }
-  }
-
-  void _autoCheckOut() {
-    if (_isCheckedIn && mounted) {
-      _handleCheckInOut(isAuto: true);
+      // Note: We might need to handle the MQTT client migration here too
     }
   }
 
@@ -115,157 +173,110 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
     try {
       if (!_isCheckedIn) {
-        // Check In - Get current position first
-        Position? position;
-        bool isAtOffice = false;
-        
-        try {
-          final hasPermission = await LocationService().handleLocationPermission();
-          if (hasPermission) {
-            position = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(
-                accuracy: LocationAccuracy.best,
-                timeLimit: Duration(seconds: 15),
-              ),
-            );
-            
-            // Load office coordinates and radius from settings
-            double officeLat = kOfficeLatitude;
-            double officeLng = kOfficeLongitude;
-            double radius = kGeofenceRadiusMeter;
+        // Requirement 1: Strict Location Validation
+        Position position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        );
 
-            final savedLat = await DatabaseHelper.instance.getSetting('office_latitude');
-            final savedLng = await DatabaseHelper.instance.getSetting('office_longitude');
-            final savedRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
+        double distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          kOfficeLatitude,
+          kOfficeLongitude,
+        );
 
-            if (savedLat != null && savedLng != null) {
-              officeLat = double.tryParse(savedLat) ?? kOfficeLatitude;
-              officeLng = double.tryParse(savedLng) ?? kOfficeLongitude;
-            }
-            if (savedRadius != null) {
-              radius = double.tryParse(savedRadius) ?? kGeofenceRadiusMeter;
-            }
-
-            double distance = Geolocator.distanceBetween(
-              position.latitude,
-              position.longitude,
-              officeLat,
-              officeLng,
-            );
-            
-            isAtOffice = distance <= radius;
-          }
-        } catch (e) {
-          // Fallback handled below
-        }
-
-        if (isAtOffice) {
-          final id = await DatabaseHelper.instance.checkIn(
-            timeString, 
-            dateString, 
-            position?.latitude, 
-            position?.longitude,
-            type: 'Office'
-          );
-          
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Checked in at Office. Attendance marked.'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-          
-          setState(() {
-            _isCheckedIn = true;
-            _checkInTime = now;
-            _currentAttendanceId = id;
-            _duration = Duration.zero;
-          });
-          _startTimer();
-          if (widget.onActionComplete != null) widget.onActionComplete!();
-          LocationService().startTracking(widget.mqttClient, onExitedOffice: _autoCheckOut);
-        } else {
-          // Non-office check-in: Start Time Log (recorded in attendance table now)
-          final id = await DatabaseHelper.instance.checkIn(
-            timeString, 
-            dateString, 
-            position?.latitude, 
-            position?.longitude,
-            type: 'Away'
-          );
-
+        if (distance > 100) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Not at office. Starting Time Log for: ${position != null ? '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}' : 'Unknown location'}'),
-                backgroundColor: Colors.orange,
+                content: Text('You are not at the office! (Distance: ${distance.toStringAsFixed(0)} meters)'),
+                backgroundColor: Colors.red,
               ),
             );
           }
-          
-          setState(() {
-            _isCheckedIn = true;
-            _checkInTime = now;
-            _currentAttendanceId = id;
-            _duration = Duration.zero;
-            _checkInLat = position?.latitude;
-            _checkInLng = position?.longitude;
-          });
-          _startTimer();
-          if (widget.onActionComplete != null) widget.onActionComplete!();
-          // Still track for range updates
-          LocationService().startTracking(widget.mqttClient, centerLat: position?.latitude, centerLng: position?.longitude, onExitedOffice: _autoCheckOut);
+          return; // Requirement 1: Strict Return
         }
-      } else {
-        // Check Out
-        if (_currentAttendanceId != null) {
-          String finalStatus = 'Completed';
-          
-          // VERIFY LOCATION ON CHECKOUT if type was Away
-          // Note: We need to know if it was Away. For simplicity, check _checkInLat
-          if (_checkInLat != null) {
-            try {
-              final currentPos = await Geolocator.getCurrentPosition();
-              double distance = Geolocator.distanceBetween(
-                _checkInLat!, _checkInLng!, currentPos.latitude, currentPos.longitude
-              );
-              
-              double radius = kGeofenceRadiusMeter;
-              final savedRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
-              if (savedRadius != null) radius = double.tryParse(savedRadius) ?? kGeofenceRadiusMeter;
-              
-              if (distance > radius) finalStatus = 'Failed';
-            } catch (e) {
-              // Location check failed, assume Completed or keep as is
-            }
-          }
 
+        // Proceed with check-in
+        final id = await DatabaseHelper.instance.checkIn(
+          timeString, 
+          dateString, 
+          position.latitude, 
+          position.longitude,
+          type: 'Office'
+        );
+        
+        // Publish to MQTT using standardized function
+        mqttService.publishAttendance(
+          "Checked In",
+          position.latitude,
+          position.longitude,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Checked in at Office.'), backgroundColor: Colors.green),
+          );
+        }
+        
+        setState(() {
+          _isCheckedIn = true;
+          _checkInTime = now;
+          _currentAttendanceId = id;
+          _duration = Duration.zero;
+        });
+        _startTimer();
+        
+        // Requirement 2: Schedule 5:30 PM reminder on Check-In
+        _scheduleShiftEndReminder();
+
+        if (widget.onActionComplete != null) widget.onActionComplete!();
+
+      } else {
+        // Requirement 2: Minimum Duration for "Present" Status
+        if (_currentAttendanceId != null && _checkInTime != null) {
+          Duration worked = now.difference(_checkInTime!);
+          // DATABASE LOGIC: Explicitly save strings
+          String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
+          
           await DatabaseHelper.instance.checkOut(timeString, _currentAttendanceId!, status: finalStatus);
           
-          if (finalStatus == 'Completed') {
+          // Get current position for MQTT
+          Position position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+          );
+
+          // Publish to MQTT using standardized function
+          mqttService.publishAttendance(
+            finalStatus,
+            position.latitude,
+            position.longitude,
+          );
+
+          // Requirement 3: Cancel 5:30 PM reminder on Check-Out
+          _cancelShiftEndReminder();
+
+          if (finalStatus == 'Present') {
             await _scheduleNextShiftAlarm();
           }
 
           _timer?.cancel();
-          LocationService().stopTracking();
+          
           setState(() {
             _isCheckedIn = false;
             _checkInTime = null;
             _currentAttendanceId = null;
             _duration = Duration.zero;
-            _checkInLat = null;
-            _checkInLng = null;
           });
+          
           if (widget.onActionComplete != null) widget.onActionComplete!();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(finalStatus == 'Failed' 
-                  ? 'Checked out: Log marked as FAILED (Location mismatch)' 
-                  : (isAuto ? 'Auto-checked out (Location Range Exceeded)' : 'Checked out successfully!')),
-                backgroundColor: finalStatus == 'Failed' ? Colors.red : (isAuto ? Colors.orange : Colors.blue),
+                content: Text(finalStatus == 'Present' 
+                  ? 'Shift Completed: Present' 
+                  : 'Checked out: Shift Incomplete (< 9hrs)'),
+                backgroundColor: finalStatus == 'Present' ? Colors.blue : Colors.orange,
               ),
             );
           }
@@ -286,7 +297,7 @@ class _AttendanceCardState extends State<AttendanceCard> {
   @override
   void dispose() {
     _timer?.cancel();
-    LocationService().stopTracking();
+    _positionStream?.cancel(); // Requirement 2: Prevent memory leaks
     super.dispose();
   }
 
