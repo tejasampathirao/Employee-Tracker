@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/app_logger.dart';
+import 'live_data_monitor_screen.dart';
 
 class DebugLogsScreen extends StatefulWidget {
   const DebugLogsScreen({super.key});
@@ -51,7 +52,12 @@ class _DebugLogsScreenState extends State<DebugLogsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('System Logs'),
+        title: GestureDetector(
+          onLongPress: () {
+            Navigator.pushNamed(context, LiveDataMonitorScreen.id);
+          },
+          child: const Text('System Logs'),
+        ),
         actions: [
           IconButton(
             onPressed: () {

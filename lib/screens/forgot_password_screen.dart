@@ -271,17 +271,30 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             return;
           }
           if (_passwordController.text == _confirmPasswordController.text) {
-            await DatabaseHelper.instance.updatePassword(_passwordController.text);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Password updated successfully! Log in now.')),
-              );
-              Navigator.pop(context);
+            setState(() => _isLoading = true);
+            try {
+              // FIX: Use the specific email to update the correct user record
+              await DatabaseHelper.instance.updateUserPassword(_emailController.text.trim(), _passwordController.text);
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password updated successfully! Log in now.'), backgroundColor: Colors.green),
+                );
+                Navigator.pop(context);
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error updating password: $e'), backgroundColor: Colors.red),
+                );
+              }
+            } finally {
+              if (mounted) setState(() => _isLoading = false);
             }
           } else {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
           }
-        }),
+        }, isLoading: _isLoading),
       ],
     );
   }
