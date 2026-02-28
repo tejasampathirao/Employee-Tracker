@@ -148,6 +148,46 @@ class MqttHandler {
     publish(expensesTopic, jsonString);
   }
 
+  /// Function 6: Publishes an additional expense with optional bill image
+  void publishAdditionalExpense({
+    required String description,
+    required double amount,
+    required String employeeId,
+    String? billImagePath,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "additional_expense",
+      "description": description,
+      "amount": amount,
+      "employee_id": employeeId,
+      "timestamp": DateTime.now().toIso8601String(),
+      "bill_image_path": billImagePath
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Additional Expense]: Sending Payload: $jsonString');
+    publish(expensesTopic, jsonString);
+  }
+
+  /// Function 7: Publishes a daily work log
+  void publishDailyWorkLog({
+    required String description,
+    required String workType,
+    required String employeeId,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "daily_work_log",
+      "description": description,
+      "work_type": workType,
+      "employee_id": employeeId,
+      "timestamp": DateTime.now().toIso8601String()
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Work Log]: Sending Payload: $jsonString');
+    publish(attendanceTopic, jsonString); // Using attendance topic for work logs
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};

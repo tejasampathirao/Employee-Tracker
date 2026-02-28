@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 13, // Bumped version to 13
+      version: 14, // Bumped version to 14
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,6 +32,15 @@ class DatabaseHelper {
     // Force creation of tables if they are missing
     await _createTables(db);
     
+    if (oldVersion < 14) {
+      try {
+        await db.execute('ALTER TABLE timelogs ADD COLUMN title TEXT');
+      } catch (e) {
+        // Column might already exist if table was created with version 13
+        debugPrint("Note: timelogs title column already exists or error: $e");
+      }
+    }
+
     if (oldVersion < 11) {
       try {
         await db.execute('ALTER TABLE expenses ADD COLUMN bill_image TEXT');

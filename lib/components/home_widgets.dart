@@ -666,12 +666,16 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
-                          controller: mileageController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Mileage (km/L)', border: OutlineInputBorder()),
+                          decoration: const InputDecoration(labelText: 'Vehicle/Type', border: OutlineInputBorder()),
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: mileageController,
+                    readOnly: true, // Making it read-only since it's auto-populated with distance
+                    decoration: const InputDecoration(labelText: 'Calculated Distance (km)', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -819,64 +823,92 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
   );
 }
 
-void _showWorkService(BuildContext context) {
+void _showWorkService(BuildContext context, MqttHandler mqttClient) {
+  final TextEditingController descController = TextEditingController();
+  final TextEditingController typeController = TextEditingController();
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
     builder: (context) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.5,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back_ios, size: 20),
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_ios, size: 20),
+                  ),
+                  const Text('Daily Work Log', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: descController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Enter your work details...',
+                  border: OutlineInputBorder(),
                 ),
-                const Text('Daily Work Log', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const TextField(
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: 'Description',
-                hintText: 'Enter your work details...',
-                border: OutlineInputBorder(),
               ),
-            ),
-            const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: 'Client Meet',
-                hintText: 'Meeting details...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Work details submitted successfully!'))
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: typeController,
+                decoration: const InputDecoration(
+                  labelText: 'Client Meet / Work Type',
+                  hintText: 'Meeting details...',
+                  border: OutlineInputBorder(),
                 ),
-                child: const Text('Submit', style: TextStyle(color: Colors.white, fontSize: 16)),
               ),
-            ),
-          ],
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    if (descController.text.isEmpty || typeController.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill all fields'))
+                      );
+                      return;
+                    }
+
+                    // Removed Database Storage as requested
+
+                    // MQTT Publishing Only
+                    final user = await DatabaseHelper.instance.getUser();
+                    final String employeeId = user?['name'] ?? 'Teja';
+                    
+                    mqttClient.publishDailyWorkLog(
+                      description: descController.text,
+                      workType: typeController.text,
+                      employeeId: employeeId,
+                    );
+
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Work details published via MQTT!'), backgroundColor: Colors.green)
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Submit', style: TextStyle(color: Colors.white, fontSize: 16)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -1040,8 +1072,13 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
     final user = await DatabaseHelper.instance.getUser();
     final String employeeId = user?['name'] ?? 'Teja';
 
-    // Publish via MQTT using standardized helper function
-    mqttClient.publishExpense(category, description, amt, employeeId);
+    // Publish via MQTT using new specialized helper function
+    mqttClient.publishAdditionalExpense(
+      description: "$category: $description",
+      amount: amt,
+      employeeId: employeeId,
+      billImagePath: savedImagePath,
+    );
   }
 
   showModalBottomSheet(
@@ -1080,6 +1117,15 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
                 height: 54,
                 child: ElevatedButton(
                   onPressed: () {
+                    // Check for unsaved data in controllers
+                    final desc = controllers['Material_desc']?.text;
+                    final amt = controllers['Material_amt']?.text;
+                    
+                    if (desc != null && amt != null && desc.isNotEmpty && amt.isNotEmpty) {
+                      // Trigger save for the unsaved fields
+                      saveExpense('Material', 'Material Expenses', desc, amt, null);
+                    }
+
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All bills submitted successfully!')));
                     Navigator.pop(context);
                   },
@@ -1150,7 +1196,17 @@ class _ExpenseSectionState extends State<ExpenseSection> {
             Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
             TextButton.icon(
               onPressed: () {
-                widget.onAdd(widget.title, widget.controllers[descKey]!.text, widget.controllers[amtKey]!.text, _billImage);
+                final desc = widget.controllers[descKey]!.text;
+                final amt = widget.controllers[amtKey]!.text;
+                
+                if (desc.isEmpty || amt.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter description and amount'), backgroundColor: Colors.red)
+                  );
+                  return;
+                }
+
+                widget.onAdd(widget.title, desc, amt, _billImage);
                 widget.controllers[descKey]!.clear();
                 widget.controllers[amtKey]!.clear();
                 setState(() => _billImage = null);
@@ -1295,7 +1351,7 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
           _showTimeTrackerService(context);
           break;
         case 'Work':
-          _showWorkService(context);
+          _showWorkService(context, mqttClient);
           break;
         case 'Travel Expenses':
           _showTravelExpenseService(context, mqttClient);
@@ -2027,10 +2083,11 @@ Future<void> _calculateTripCost(
   
   AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
 
-  double mileage = double.tryParse(mileageCtrl.text) ?? 35.0;
   double price = double.tryParse(priceCtrl.text) ?? 103.0;
 
-  double liters = roadDistanceKm / mileage;
+  mileageCtrl.text = roadDistanceKm.toStringAsFixed(2);
+
+  double liters = roadDistanceKm / 35.0; // Using default mileage for cost calculation if box is now distance
   double cost = liters * price;
 
   amtCtrl.text = cost.toStringAsFixed(2);
