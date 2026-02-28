@@ -24,11 +24,23 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
-    final data = await DatabaseHelper.instance.getAllAttendance();
-    setState(() {
-      _historyData = data;
-      _isLoading = false;
-    });
+    try {
+      final data = await DatabaseHelper.instance.getAllAttendance();
+      if (mounted) {
+        setState(() {
+          _historyData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching attendance history: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _historyData = [];
+        });
+      }
+    }
   }
 
   @override

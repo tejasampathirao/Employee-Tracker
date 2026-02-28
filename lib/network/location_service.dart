@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/mqtt_handler.dart';
 import 'dart:async';
@@ -15,12 +16,17 @@ class LocationService {
   double? _refLat;
   double? _refLng;
 
-  Future<bool> handleLocationPermission() async {
+  Future<bool> handleLocationPermission(BuildContext context) async {
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled. Please enable them.')),
+        );
+      }
       return false;
     }
 
@@ -28,24 +34,36 @@ class LocationService {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied.')),
+          );
+        }
         return false;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permissions are permanently denied. We cannot request permissions.'),
+          ),
+        );
+      }
       return false;
     }
 
     return true;
   }
 
-  void startTracking(MqttHandler mqttClient, {double? centerLat, double? centerLng, Function()? onExitedOffice}) async {
+  void startTracking(MqttHandler mqttClient, BuildContext context, {double? centerLat, double? centerLng, Function()? onExitedOffice}) async {
     _mqttClient = mqttClient;
     _onExitedOffice = onExitedOffice;
     _refLat = centerLat;
     _refLng = centerLng;
 
-    final hasPermission = await handleLocationPermission();
+    final hasPermission = await handleLocationPermission(context);
     if (!hasPermission) return;
 
     const LocationSettings locationSettings = LocationSettings(

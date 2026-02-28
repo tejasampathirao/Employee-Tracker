@@ -1,10 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import '../database/db_helper.dart';
+import '../utils/app_logger.dart';
 
 class MqttHandler {
   // Singleton Pattern
@@ -62,7 +62,7 @@ class MqttHandler {
     };
 
     final String jsonString = jsonEncode(payload);
-    debugPrint('MQTT DEBUG [Leave]: Sending Payload: $jsonString');
+    AppLogger.log('MQTT DEBUG [Leave]: Sending Payload: $jsonString');
     publish(leaveTopic, jsonString);
   }
 
@@ -80,7 +80,7 @@ class MqttHandler {
     };
 
     final String jsonString = jsonEncode(payload);
-    debugPrint('MQTT DEBUG [Attendance]: Sending Payload: $jsonString');
+    AppLogger.log('MQTT DEBUG [Attendance]: Sending Payload: $jsonString');
     publish(attendanceTopic, jsonString);
   }
 
@@ -92,14 +92,12 @@ class MqttHandler {
   ) {
     final Map<String, dynamic> payload = {
       "type": "live_location",
-      "lat": lat,
-      "lng": lng,
-      "speed": speed,
+      "lat": lat, "lng": lng, "speed": speed,
       "timestamp": DateTime.now().toIso8601String()
     };
 
     final String jsonString = jsonEncode(payload);
-    debugPrint('MQTT DEBUG [Location]: Sending Payload: $jsonString');
+    AppLogger.log('MQTT DEBUG [Location]: Sending Payload: $jsonString');
     publish(locationTopic, jsonString);
   }
 
@@ -115,7 +113,7 @@ class MqttHandler {
     };
 
     final String jsonString = jsonEncode(payload);
-    debugPrint('MQTT DEBUG [Expense]: Sending Payload: $jsonString');
+    AppLogger.log('MQTT DEBUG [Expense]: Sending Payload: $jsonString');
     publish(expensesTopic, jsonString);
   }
 
@@ -146,7 +144,7 @@ class MqttHandler {
     };
 
     final String jsonString = jsonEncode(payload);
-    debugPrint('MQTT DEBUG [Travel Expense]: Sending Payload: $jsonString');
+    AppLogger.log('MQTT DEBUG [Travel Expense]: Sending Payload: $jsonString');
     publish(expensesTopic, jsonString);
   }
 
@@ -161,12 +159,12 @@ class MqttHandler {
     }
     
     try {
-      debugPrint('MQTT: Connecting to $broker:$port...');
+      AppLogger.log('MQTT: Connecting to $broker:$port...');
       await client.connect();
       _setupMessageListener();
       return true;
     } catch (e) {
-      debugPrint('MQTT: Connection failed - $e');
+      AppLogger.log('MQTT: Connection failed - $e');
       return false;
     }
   }
@@ -197,10 +195,10 @@ class MqttHandler {
                 'status': 'Approved' // Incoming claims from server are pre-approved or for syncing
               };
               await DatabaseHelper.instance.insertExpense(expense);
-              debugPrint('MQTT: Sync - New Expense saved to DB');
+              AppLogger.log('MQTT: Sync - New Expense saved to DB');
             }
           } catch (e) {
-            debugPrint('MQTT Error: Failed to parse expense sync data - $e');
+            AppLogger.log('MQTT Error: Failed to parse expense sync data - $e');
           }
         }
       }
@@ -217,7 +215,7 @@ class MqttHandler {
       builder.addString(message);
       client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
     } else {
-      debugPrint('MQTT Error: Cannot publish, client not connected');
+      AppLogger.log('MQTT Error: Cannot publish, client not connected');
       connect(); // Attempt auto-reconnect
     }
   }
@@ -231,7 +229,7 @@ class MqttHandler {
   Stream<List<MqttReceivedMessage<MqttMessage>>>? get updates => client.updates;
 
   void _onConnected() {
-    debugPrint('MQTT: Connected Successfully');
+    AppLogger.log('MQTT: Connected Successfully');
     subscribe(attendanceTopic);
     subscribe(leaveTopic);
     subscribe(locationTopic);
@@ -240,11 +238,11 @@ class MqttHandler {
   }
 
   void _onDisconnected() {
-    debugPrint('MQTT: Disconnected');
+    AppLogger.log('MQTT: Disconnected');
   }
 
   void _onSubscribed(String topic) {
-    debugPrint('MQTT: Subscribed to $topic');
+    AppLogger.log('MQTT: Subscribed to $topic');
   }
 
   void disconnect() {
@@ -252,3 +250,4 @@ class MqttHandler {
     client.disconnect();
   }
 }
+

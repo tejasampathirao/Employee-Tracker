@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/home.dart';
 import '../screens/forgot_password_screen.dart';
+import '../database/db_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,7 +12,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final GlobalKey<FormState> _keyL = GlobalKey();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  
+  bool _isObscured = true;
+  bool _isLoading = false;
   double _opacity = 0.0;
 
   @override
@@ -23,10 +29,60 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final user = await DatabaseHelper.instance.authenticateUser(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (user != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login Successful! Welcome back.'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid email or password. Please try again.'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error during login: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // Stack allows drawing behind the system bars if needed, but we use Container with gradient
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -42,7 +98,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         child: SafeArea(
-          // SafeArea ensures content doesn't overlap with system UI buttons/notch
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 800),
             opacity: _opacity,
@@ -81,20 +136,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 50),
                   Form(
-                    key: _keyL,
+                    key: _formKey,
                     child: Column(
                       children: <Widget>[
-                        _buildStyledTextField(
-                          hint: 'Email Address',
-                          icon: Icons.alternate_email,
-                          type: TextInputType.emailAddress,
-                        ),
+                        _buildEmailField(),
                         const SizedBox(height: 20.0),
-                        _buildStyledTextField(
-                          hint: 'Password',
-                          icon: Icons.lock_open_rounded,
-                          isPassword: true,
-                        ),
+                        _buildPasswordField(),
                         const SizedBox(height: 15),
                         Align(
                           alignment: Alignment.centerRight,
@@ -106,37 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 40.0),
-                        Container(
-                          width: double.infinity,
-                          height: 58,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            gradient: LinearGradient(
-                              colors: [Colors.blue[800]!, const Color(0xff21b409)],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.blue[800]!.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                            ),
-                            child: const Text(
-                              'LOG IN',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.5),
-                            ),
-                          ),
-                        ),
+                        _buildLoginButton(),
                         const SizedBox(height: 40),
                         const Row(
                           children: [
@@ -170,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildStyledTextField({required String hint, required IconData icon, bool isPassword = false, TextInputType? type}) {
+  Widget _buildEmailField() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -184,15 +201,99 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
       child: TextFormField(
-        obscureText: isPassword,
-        keyboardType: type,
+        controller: _emailController,
+        keyboardType: TextInputType.emailAddress,
+        validator: (value) {
+          if (value == null || value.isEmpty) return 'Please enter your email';
+          final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+          if (!emailRegex.hasMatch(value)) return 'Please enter a valid email address';
+          return null;
+        },
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: 'Email Address',
           hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-          prefixIcon: Icon(icon, color: Colors.blue[900], size: 22),
+          prefixIcon: Icon(Icons.alternate_email, color: Colors.blue[900], size: 22),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: _passwordController,
+        obscureText: _isObscured,
+        validator: (value) {
+          if (value == null || value.isEmpty) return 'Please enter your password';
+          if (value.length < 6) return 'Password must be at least 6 characters';
+          return null;
+        },
+        decoration: InputDecoration(
+          hintText: 'Password',
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
+          prefixIcon: Icon(Icons.lock_open_rounded, color: Colors.blue[900], size: 22),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _isObscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              color: Colors.grey,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _isObscured = !_isObscured),
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginButton() {
+    return Container(
+      width: double.infinity,
+      height: 58,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [Colors.blue[800]!, const Color(0xff21b409)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue[800]!.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _handleLogin,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        ),
+        child: _isLoading
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+            : const Text(
+                'LOG IN',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.5),
+              ),
       ),
     );
   }
@@ -208,4 +309,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

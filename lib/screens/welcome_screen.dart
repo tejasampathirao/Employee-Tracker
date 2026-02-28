@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/rounded_button.dart';
 import 'login_screen.dart';
+import 'register_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -79,7 +80,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 title: 'Register',
                 colour: const Color(0xff21b409),
                 onPressed: () {
-                  Navigator.pushNamed(context, LoginScreen.id);
+                  Navigator.pushNamed(context, RegisterScreen.id);
                 },
               ),
               const Spacer(flex: 2),

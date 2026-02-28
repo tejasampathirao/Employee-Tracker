@@ -18,11 +18,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   String? _generatedCode;
+  bool _isLoading = false;
 
   Future<void> sendOtpEmail(String recipientEmail, String otpCode) async {
-    // REPLACE THESE WITH YOUR ACTUAL GMAIL AND APP PASSWORD
-    String username = 'YOUR_GMAIL_ADDRESS@gmail.com';
-    String password = 'YOUR_GOOGLE_APP_PASSWORD'; 
+    // UPDATED SMTP CREDENTIALS
+    String username = 'tejeswararaosampathirao@gmail.com';
+    String password = 'tdepwrkoorlsqdsi'; 
 
     final smtpServer = gmail(username, password);
 
@@ -45,34 +46,52 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     try {
       await send(message, smtpServer);
+    } on MailerException catch (e) {
+      debugPrint('MailerException: $e');
+      rethrow;
     } catch (e) {
-      debugPrint('Error sending email: $e');
+      debugPrint('General Error: $e');
       rethrow;
     }
   }
 
   void _sendEmailCode() async {
+    if (_emailController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your email address')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    
     // Generates a 6-digit code
     _generatedCode = (100000 + (900000 * (DateTime.now().millisecond / 1000)).floor()).toString();
     
-    // Show loading feedback
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sending verification code...'), duration: Duration(seconds: 2)),
-    );
-
     try {
       await sendOtpEmail(_emailController.text, _generatedCode!);
       
       if (mounted) {
-        setState(() => _currentStep = 2);
+        setState(() {
+          _isLoading = false;
+          _currentStep = 2; // Transition to OTP Verification View
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification code sent to email')),
+          const SnackBar(
+            content: Text('OTP Sent Successfully!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send email. Check your SMTP settings.')),
+          const SnackBar(
+            content: Text('Failed to send email. Please check your connection.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -188,7 +207,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           type: TextInputType.emailAddress,
         ),
         const SizedBox(height: 40),
-        _actionButton('SEND CODE', _sendEmailCode),
+        _actionButton('SEND CODE', _sendEmailCode, isLoading: _isLoading),
       ],
     );
   }
@@ -209,7 +228,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
         const SizedBox(height: 15),
         TextButton(
-          onPressed: _sendEmailCode,
+          onPressed: _isLoading ? null : _sendEmailCode,
           child: const Text('Resend Code', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 40),
@@ -294,18 +313,24 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 
-  Widget _actionButton(String label, VoidCallback onPressed) {
+  Widget _actionButton(String label, VoidCallback onPressed, {bool isLoading = false}) {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton(
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.blue[800],
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           elevation: 0,
         ),
-        child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        child: isLoading 
+          ? const SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+            )
+          : Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
       ),
     );
   }

@@ -22,216 +22,33 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 11, // Bumped version to 11
+      version: 13, // Bumped version to 13
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute('ALTER TABLE attendance ADD COLUMN latitude REAL');
-      await db.execute('ALTER TABLE attendance ADD COLUMN longitude REAL');
-    }
-    if (oldVersion < 3) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS approvals (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT,
-          type TEXT,
-          status TEXT,
-          requester TEXT,
-          timestamp TEXT
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS timelogs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT,
-          task TEXT,
-          hours REAL,
-          description TEXT
-        )
-      ''');
-    }
-    if (oldVersion < 4) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-          key TEXT PRIMARY KEY,
-          value TEXT
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS expenses (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT,
-          category TEXT,
-          amount REAL,
-          description TEXT,
-          date TEXT,
-          status TEXT
-        )
-      ''');
-    }
-    if (oldVersion < 5) {
-      await db.execute('ALTER TABLE attendance ADD COLUMN type TEXT DEFAULT "Office"');
-      await db.execute('ALTER TABLE attendance ADD COLUMN status TEXT DEFAULT "Completed"');
-    }
-    if (oldVersion < 6) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS leaves (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          leaveType TEXT,
-          fromDate TEXT,
-          toDate TEXT,
-          reason TEXT,
-          status TEXT,
-          appliedDate TEXT
-        )
-      ''');
-    }
-    if (oldVersion < 7) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-          id INTEGER PRIMARY KEY,
-          name TEXT,
-          details TEXT,
-          phone TEXT,
-          password TEXT,
-          email TEXT
-        )
-      ''');
-      await db.insert('users', {
-        'id': 1,
-        'name': 'Srinivas Reddy',
-        'details': 'Chief Financial Officer',
-        'phone': '9876543210',
-        'password': 'password123',
-        'email': 'srinivas@example.com'
-      });
-    }
-    if (oldVersion < 8) {
-      try {
-        await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
-        await db.update('users', {'email': 'srinivas@example.com'}, where: 'id = ?', whereArgs: [1]);
-      } catch (e) {}
-    }
-    if (oldVersion < 9) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS sites (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT,
-          lat REAL,
-          lng REAL
-        )
-      ''');
-      await db.insert('sites', {
-        'name': 'Head Office',
-        'lat': 12.9716,
-        'lng': 77.5946
-      });
-    }
-    if (oldVersion < 10) {
-      try {
-        await db.execute('ALTER TABLE expenses ADD COLUMN visit_type TEXT');
-      } catch (e) {}
-    }
+    // Force creation of tables if they are missing
+    await _createTables(db);
+    
     if (oldVersion < 11) {
       try {
         await db.execute('ALTER TABLE expenses ADD COLUMN bill_image TEXT');
       } catch (e) {}
     }
+    if (oldVersion < 12) {
+      try {
+        await db.execute('ALTER TABLE expenses ADD COLUMN src_lat REAL');
+        await db.execute('ALTER TABLE expenses ADD COLUMN src_lng REAL');
+        await db.execute('ALTER TABLE expenses ADD COLUMN dest_lat REAL');
+        await db.execute('ALTER TABLE expenses ADD COLUMN dest_lng REAL');
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        checkInTime TEXT,
-        checkOutTime TEXT,
-        date TEXT,
-        latitude REAL,
-        longitude REAL,
-        type TEXT,
-        status TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE approvals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        type TEXT,
-        status TEXT,
-        requester TEXT,
-        timestamp TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE timelogs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        task TEXT,
-        hours REAL,
-        description TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT,
-        category TEXT,
-        amount REAL,
-        description TEXT,
-        date TEXT,
-        status TEXT,
-        visit_type TEXT,
-        bill_image TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE leaves (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        leaveType TEXT,
-        fromDate TEXT,
-        toDate TEXT,
-        reason TEXT,
-        status TEXT,
-        appliedDate TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE users (
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        details TEXT,
-        phone TEXT,
-        password TEXT,
-        email TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE sites (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        lat REAL,
-        lng REAL
-      )
-    ''');
+    await _createTables(db);
     
     await db.insert('users', {
       'id': 1,
@@ -247,6 +64,99 @@ class DatabaseHelper {
       'lat': 12.9716,
       'lng': 77.5946
     });
+  }
+
+  Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        checkInTime TEXT,
+        checkOutTime TEXT,
+        date TEXT,
+        latitude REAL,
+        longitude REAL,
+        type TEXT,
+        status TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS timelogs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        hours REAL,
+        date TEXT,
+        description TEXT,
+        category TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT,
+        category TEXT,
+        amount REAL,
+        description TEXT,
+        date TEXT,
+        status TEXT,
+        visit_type TEXT,
+        bill_image TEXT,
+        src_lat REAL,
+        src_lng REAL,
+        dest_lat REAL,
+        dest_lng REAL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS leaves (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        leaveType TEXT,
+        fromDate TEXT,
+        toDate TEXT,
+        reason TEXT,
+        status TEXT,
+        appliedDate TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        details TEXT,
+        phone TEXT,
+        password TEXT,
+        email TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        lat REAL,
+        lng REAL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS approvals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        status TEXT,
+        date TEXT,
+        type TEXT
+      )
+    ''');
+    
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    ''');
   }
 
   // --- Sites Methods ---
@@ -558,6 +468,50 @@ class DatabaseHelper {
   }
 
   // --- User Methods ---
+  Future<bool> isEmailRegistered(String email) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'users',
+      where: 'email = ?',
+      whereArgs: [email],
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<bool> registerUser(String name, String email, String password) async {
+    final db = await instance.database;
+    
+    // Check if email already exists
+    final existing = await db.query(
+      'users',
+      where: 'email = ?',
+      whereArgs: [email],
+    );
+
+    if (existing.isNotEmpty) {
+      return false; // Email already registered
+    }
+
+    // Insert new user
+    await db.insert('users', {
+      'name': name,
+      'email': email,
+      'password': password,
+      'details': 'Employee' // Default role/details
+    });
+    return true;
+  }
+
+  Future<Map<String, dynamic>?> authenticateUser(String email, String password) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'users',
+      where: 'email = ? AND password = ?',
+      whereArgs: [email, password],
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
   Future<Map<String, dynamic>?> getUser() async {
     final db = await instance.database;
     final result = await db.query('users', where: 'id = ?', whereArgs: [1]);
@@ -569,8 +523,19 @@ class DatabaseHelper {
     return await db.update('users', {'name': name, 'details': details}, where: 'id = ?', whereArgs: [1]);
   }
 
+  Future<int> updateUserPassword(String email, String newPassword) async {
+    final db = await instance.database;
+    return await db.update(
+      'users',
+      {'password': newPassword},
+      where: 'email = ?',
+      whereArgs: [email],
+    );
+  }
+
   Future<int> updatePassword(String newPassword) async {
     final db = await instance.database;
+    // Note: If you have multiple users, you should pass an ID here.
     return await db.update('users', {'password': newPassword}, where: 'id = ?', whereArgs: [1]);
   }
 

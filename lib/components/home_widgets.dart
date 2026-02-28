@@ -15,8 +15,12 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/profile_edit_screen.dart';
 import 'overtime_calculator_card.dart';
+import '../screens/map_selection_screen.dart';
+import '../utils/app_logger.dart';
+import '../screens/debug_logs_screen.dart';
 
 Widget getDrawerWidget(
   int index,
@@ -64,16 +68,27 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
   }
 
   Future<void> _loadInitialData() async {
-    // Requirement 2: Fetch cumulative stats from attendance table
-    final stats = await DatabaseHelper.instance.getAttendanceSummary();
-    final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
-    if (mounted) {
-      setState(() {
-        _stats = stats;
-        if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
-          _checkInTime = DateTime.parse(lastAttendance['checkInTime']);
-        }
-      });
+    try {
+      // Requirement 2: Fetch cumulative stats from attendance table
+      final stats = await DatabaseHelper.instance.getAttendanceSummary();
+      final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
+      if (mounted) {
+        setState(() {
+          _stats = stats;
+          if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
+            _checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading initial time logs data: $e");
+      // Fallback to empty stats to avoid crashes
+      if (mounted) {
+        setState(() {
+          _stats = {'today': 0.0, 'week': 0.0, 'month': 0.0};
+          _checkInTime = null;
+        });
+      }
     }
   }
 
@@ -333,7 +348,7 @@ Color _buildAttendanceStatusColor(DateTime day, String? status) {
   }
 
   // Priority 2: Weekends
-  if (day.weekday == DateTime.saturday || day.weekday == DateTime.sunday) {
+  if (day.weekday == DateTime.sunday) {
     return Colors.black;
   }
 
@@ -397,6 +412,7 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
             FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) return _buildEmptyState('Error loading stats');
                 if (!snapshot.hasData) return const SizedBox.shrink();
 
                 final currentMonthStr = DateFormat('yyyy-MM').format(now);
@@ -421,7 +437,7 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                 int totalDaysPassed = 0;
                 for (int i = 1; i <= now.day; i++) {
                   final d = DateTime(now.year, now.month, i);
-                  if (d.weekday != DateTime.saturday && d.weekday != DateTime.sunday) {
+                  if (d.weekday != DateTime.sunday) {
                     totalDaysPassed++;
                   }
                 }
@@ -487,6 +503,7 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
             FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) return _buildEmptyState('Error loading calendar');
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                 
                 final statusMap = {
@@ -523,7 +540,7 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                         child: Text(
                           '$day',
                           style: TextStyle(
-                            color: (date.weekday == DateTime.saturday || date.weekday == DateTime.sunday || isFuture) 
+                            color: (date.weekday == DateTime.sunday || isFuture) 
                                 ? Colors.grey[600] 
                                 : Colors.white,
                             fontWeight: FontWeight.bold
@@ -585,19 +602,8 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
   final TextEditingController amtController = TextEditingController();
   final TextEditingController priceController = TextEditingController(text: "103");
   final TextEditingController mileageController = TextEditingController(text: "35");
-  String? selectedSite;
+  LatLng? selectedLatLng;
   String visitType = 'Onsite';
-  Map<String, LatLng> companySites = {};
-
-  Future<void> loadSites(Function setModalState) async {
-    final sites = await DatabaseHelper.instance.getSites();
-    setModalState(() {
-      companySites = sites;
-      if (companySites.isNotEmpty && selectedSite == null) {
-        selectedSite = companySites.keys.first;
-      }
-    });
-  }
 
   showModalBottomSheet(
     context: context,
@@ -605,10 +611,6 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
     builder: (context) => StatefulBuilder(
       builder: (context, setModalState) {
-        if (companySites.isEmpty) {
-          loadSites(setModalState);
-        }
-
         return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Container(
@@ -629,27 +631,27 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                   ),
                   const SizedBox(height: 24),
                   const Text('Visit Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text('Onsite 🏭', style: TextStyle(fontSize: 14)),
-                          value: 'Onsite',
-                          groupValue: visitType,
-                          onChanged: (val) => setModalState(() => visitType = val!),
-                          contentPadding: EdgeInsets.zero,
+                  RadioGroup<String>(
+                    groupValue: visitType,
+                    onChanged: (val) => setModalState(() => visitType = val!),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('Onsite 🏭', style: TextStyle(fontSize: 14)),
+                            value: 'Onsite',
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text('Office 🏢', style: TextStyle(fontSize: 14)),
-                          value: 'Office',
-                          groupValue: visitType,
-                          onChanged: (val) => setModalState(() => visitType = val!),
-                          contentPadding: EdgeInsets.zero,
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('Office 🏢', style: TextStyle(fontSize: 14)),
+                            value: 'Office',
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -677,66 +679,72 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                     decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final LatLng? result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const MapSelectionScreen()),
+                            );
+                            if (result != null) {
+                              setModalState(() {
+                                selectedLatLng = result;
+                              });
+                              // Auto-calculate on selection
+                              await _calculateTripCost(
+                                selectedLatLng,
+                                priceController,
+                                mileageController,
+                                amtController,
+                                (msg) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+                                },
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.map),
+                          label: const Text('📍 Choose Destination'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[50],
+                            foregroundColor: Colors.blue,
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      if (selectedLatLng != null) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () async {
+                            await _calculateTripCost(
+                              selectedLatLng,
+                              priceController,
+                              mileageController,
+                              amtController,
+                              (msg) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+                              },
+                            );
+                          },
+                          icon: const Icon(Icons.refresh, color: Colors.blue),
+                        ),
+                      ]
+                    ],
+                  ),
+                  if (selectedLatLng != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'Selected: ${selectedLatLng!.latitude.toStringAsFixed(4)}, ${selectedLatLng!.longitude.toStringAsFixed(4)}',
+                        style: const TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: amtController,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ ', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Target Site', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      IconButton(
-                        icon: const Icon(Icons.add_location_alt, color: Colors.blue),
-                        onPressed: () async {
-                          // Add New Site Logic
-                          final Position pos = await Geolocator.getCurrentPosition();
-                          if (!context.mounted) return;
-                          
-                          final nameController = TextEditingController();
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Add Current Location as Site'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('Lat: ${pos.latitude.toStringAsFixed(4)}, Lng: ${pos.longitude.toStringAsFixed(4)}'),
-                                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Site Name')),
-                                ],
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    if (nameController.text.isNotEmpty) {
-                                      await DatabaseHelper.instance.addSite(nameController.text, pos.latitude, pos.longitude);
-                                      await loadSites(setModalState);
-                                      if (context.mounted) Navigator.pop(context);
-                                    }
-                                  }, 
-                                  child: const Text('Save Site'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: selectedSite,
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                    items: companySites.keys.map((site) => DropdownMenuItem(value: site, child: Text(site))).toList(),
-                    onChanged: (val) {
-                      setModalState(() => selectedSite = val);
-                      // Auto-calculate on site change
-                      _calculateTripCost(val, companySites, priceController, mileageController, amtController, (msg) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-                      });
-                    },
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
@@ -744,31 +752,35 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () async {
-                        if (descController.text.isEmpty || amtController.text.isEmpty || selectedSite == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+                        if (descController.text.isEmpty || amtController.text.isEmpty || selectedLatLng == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields and pick a destination')));
                           return;
                         }
 
                         final amount = double.tryParse(amtController.text) ?? 0.0;
+                        
+                        // Fetch Current Position
+                        final Position currentPos = await Geolocator.getCurrentPosition();
+
                         final expense = {
                           'type': 'Travel',
-                          'category': selectedSite,
+                          'category': 'Map Location',
                           'description': descController.text,
                           'amount': amount,
                           'date': DateTime.now().toIso8601String(),
                           'status': 'Pending',
-                          'visit_type': visitType // Saving visitType
+                          'visit_type': visitType,
+                          'src_lat': currentPos.latitude,
+                          'src_lng': currentPos.longitude,
+                          'dest_lat': selectedLatLng!.latitude,
+                          'dest_lng': selectedLatLng!.longitude,
                         };
 
                         await DatabaseHelper.instance.insertExpense(expense);
                         
-                        // Fetch Current Position for MQTT
-                        final Position currentPos = await Geolocator.getCurrentPosition();
-                        final LatLng dest = companySites[selectedSite!]!;
-
                         // Calculate Road Distance again for payload
                         double straightLineMeters = Geolocator.distanceBetween(
-                          currentPos.latitude, currentPos.longitude, dest.latitude, dest.longitude);
+                          currentPos.latitude, currentPos.longitude, selectedLatLng!.latitude, selectedLatLng!.longitude);
                         double roadDistanceKm = (straightLineMeters * 1.3) / 1000;
 
                         // Fetch user info for MQTT payload
@@ -778,12 +790,12 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         // Publish via MQTT with route info
                         mqttClient.publishTravelExpense(
                           amount: amount,
-                          description: "${visitType}: ${descController.text}",
+                          description: "$visitType: ${descController.text}",
                           visitType: visitType,
                           srcLat: currentPos.latitude,
                           srcLng: currentPos.longitude,
-                          destLat: dest.latitude,
-                          destLng: dest.longitude,
+                          destLat: selectedLatLng!.latitude,
+                          destLng: selectedLatLng!.longitude,
                           distanceKm: double.parse(roadDistanceKm.toStringAsFixed(2)),
                           employeeId: employeeId,
                         );
@@ -1404,7 +1416,15 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
           Center(
             child: Column(
               children: [
-                const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
+                GestureDetector(
+                  onLongPress: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const DebugLogsScreen()),
+                    );
+                  },
+                  child: const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
+                ),
                 const SizedBox(height: 16),
                 Text(user['name'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 Text(user['details'], style: const TextStyle(color: Colors.grey)),
@@ -1441,9 +1461,13 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
           ListTile(
             leading: const Icon(Icons.power_settings_new, color: Colors.red),
             title: const Text('Logout', style: TextStyle(color: Colors.red)),
-            onTap: () {
+            onTap: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
               mqttClient.disconnect();
-              Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
+              }
             },
           ),
         ],
@@ -1488,8 +1512,8 @@ void _showSettings(BuildContext context, Function onUpdate) {
                 _buildSettingsTile(Icons.lock_outline, 'Password & Security', 'Change password, 2FA'),
                 const Divider(),
                 _buildSettingsSection('App Settings'),
-                _buildGeofenceSettingTile(context),
-                _buildOfficeLocationSettingTile(context),
+                _buildGeofenceSettingTile(context, onUpdate),
+                _buildOfficeLocationSettingTile(context, onUpdate),
                 const Divider(),
                 _buildSettingsSection('Developer Tools'),
                 ListTile(
@@ -1555,7 +1579,7 @@ Widget _buildSettingsTile(IconData icon, String title, String subtitle) {
   );
 }
 
-Widget _buildGeofenceSettingTile(BuildContext context) {
+Widget _buildGeofenceSettingTile(BuildContext context, Function onUpdate) {
   return FutureBuilder<String?>(
     future: DatabaseHelper.instance.getSetting('geofence_radius'),
     builder: (context, snapshot) {
@@ -1570,13 +1594,13 @@ Widget _buildGeofenceSettingTile(BuildContext context) {
         title: const Text('Tolerable Range (Geofence)', style: TextStyle(fontWeight: FontWeight.w500)),
         subtitle: Text('$radius meters', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () => _showGeofenceDialog(context),
+        onTap: () => _showGeofenceDialog(context, onUpdate),
       );
     },
   );
 }
 
-Widget _buildOfficeLocationSettingTile(BuildContext context) {
+Widget _buildOfficeLocationSettingTile(BuildContext context, Function onUpdate) {
   return FutureBuilder<List<String?>>(
     future: Future.wait([
       DatabaseHelper.instance.getSetting('office_latitude'),
@@ -1599,13 +1623,13 @@ Widget _buildOfficeLocationSettingTile(BuildContext context) {
         title: const Text('Office Location', style: TextStyle(fontWeight: FontWeight.w500)),
         subtitle: Text(location, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () => _showOfficeLocationDialog(context),
+        onTap: () => _showOfficeLocationDialog(context, onUpdate),
       );
     },
   );
 }
 
-void _showOfficeLocationDialog(BuildContext context) {
+void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
   LatLng? pickedLocation;
   
   showModalBottomSheet(
@@ -1708,6 +1732,7 @@ void _showOfficeLocationDialog(BuildContext context) {
                                 if (pickedLocation != null) {
                                   await DatabaseHelper.instance.updateSetting('office_latitude', pickedLocation!.latitude.toString());
                                   await DatabaseHelper.instance.updateSetting('office_longitude', pickedLocation!.longitude.toString());
+                                  onUpdate();
                                   if (context.mounted) {
                                     Navigator.pop(context);
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1738,7 +1763,7 @@ void _showOfficeLocationDialog(BuildContext context) {
   );
 }
 
-void _showGeofenceDialog(BuildContext context) async {
+void _showGeofenceDialog(BuildContext context, Function onUpdate) async {
   String? currentRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
   final controller = TextEditingController(text: currentRadius ?? '100');
   
@@ -1761,6 +1786,7 @@ void _showGeofenceDialog(BuildContext context) async {
         ElevatedButton(
           onPressed: () async {
             await DatabaseHelper.instance.updateSetting('geofence_radius', controller.text);
+            onUpdate();
             if (context.mounted) {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Radius updated!')));
@@ -1984,24 +2010,22 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
 }
 
 Future<void> _calculateTripCost(
-  String? site,
-  Map<String, LatLng> sites,
+  LatLng? dest,
   TextEditingController priceCtrl,
   TextEditingController mileageCtrl,
   TextEditingController amtCtrl,
   Function(String) onResult,
 ) async {
-  if (site == null) return;
-
-  final dest = sites[site];
   if (dest == null) return;
 
   final Position pos = await Geolocator.getCurrentPosition();
   double straightDistance = Geolocator.distanceBetween(
       pos.latitude, pos.longitude, dest.latitude, dest.longitude);
 
-  // Road Factor Formula
+  // Road Factor Formula: (distanceInMeters * 1.3) / 1000
   double roadDistanceKm = (straightDistance * 1.3) / 1000;
+  
+  AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
 
   double mileage = double.tryParse(mileageCtrl.text) ?? 35.0;
   double price = double.tryParse(priceCtrl.text) ?? 103.0;
@@ -2011,5 +2035,5 @@ Future<void> _calculateTripCost(
 
   amtCtrl.text = cost.toStringAsFixed(2);
   onResult(
-      "Est. Distance: ${roadDistanceKm.toStringAsFixed(1)}km | Fuel: ${liters.toStringAsFixed(2)}L");
+      "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Fuel needed: ${liters.toStringAsFixed(2)} L");
 }

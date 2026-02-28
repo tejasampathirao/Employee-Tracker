@@ -5,9 +5,11 @@ import 'package:intl/intl.dart';
 import '../services/mqtt_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import '../constants.dart';
+import '../network/location_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import '../utils/app_logger.dart';
 
 class AttendanceCard extends StatefulWidget {
   final VoidCallback? onActionComplete;
@@ -50,8 +52,12 @@ class _AttendanceCardState extends State<AttendanceCard> {
           kOfficeLatitude,
           kOfficeLongitude,
         );
+        
+        AppLogger.log("GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m");
+
         // Requirement 2: IF distance > 100m AND checked-in, trigger auto-checkout
         if (distance > 100) {
+          AppLogger.log("GEOFENCE: Auto-checkout triggered (out of bounds)");
           _handleCheckInOut(isAuto: true);
         }
       }
@@ -167,6 +173,10 @@ class _AttendanceCardState extends State<AttendanceCard> {
   }
 
   Future<void> _handleCheckInOut({bool isAuto = false}) async {
+    // FIX 1: Location Runtime Permissions Check
+    final hasPermission = await LocationService().handleLocationPermission(context);
+    if (!hasPermission) return;
+
     final now = DateTime.now();
     final timeString = now.toIso8601String();
     final dateString = DateFormat('yyyy-MM-dd').format(now);
@@ -184,6 +194,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
           kOfficeLatitude,
           kOfficeLongitude,
         );
+        
+        AppLogger.log("CHECK-IN: Distance to office: ${distance.toStringAsFixed(0)}m");
 
         if (distance > 100) {
           if (mounted) {

@@ -5,6 +5,7 @@ import 'dart:io';
 import './screens/home.dart';
 import './screens/welcome_screen.dart';
 import './screens/login_screen.dart';
+import './screens/register_screen.dart';
 import 'database/db_helper.dart';
 
 void main() async {
@@ -65,6 +66,7 @@ class MyApp extends StatelessWidget {
       routes: {
         WelcomeScreen.id: (context) => const WelcomeScreen(),
         LoginScreen.id: (context) => const LoginScreen(),
+        RegisterScreen.id: (context) => const RegisterScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {

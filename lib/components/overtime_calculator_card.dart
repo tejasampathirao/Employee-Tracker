@@ -20,12 +20,22 @@ class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
   }
 
   Future<void> _loadOTStats() async {
-    final stats = await DatabaseHelper.instance.getOvertimeStats();
-    if (mounted) {
-      setState(() {
-        _otStats = stats;
-        _isLoading = false;
-      });
+    try {
+      final stats = await DatabaseHelper.instance.getOvertimeStats();
+      if (mounted) {
+        setState(() {
+          _otStats = stats;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading OT stats: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _otStats = {'today': 0.0, 'week': 0.0, 'month': 0.0};
+        });
+      }
     }
   }
 

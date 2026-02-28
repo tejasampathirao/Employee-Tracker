@@ -31,6 +31,7 @@ dependencies:
   # Database and Storage
   sqflite: ^2.4.2        # Local storage for attendance logs
   path: ^1.9.0
+  shared_preferences: ^2.3.2
   
   # Hardware and Location
   geolocator: ^13.0.2    # GPS for employee check-ins
