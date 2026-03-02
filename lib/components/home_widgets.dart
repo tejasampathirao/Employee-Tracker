@@ -776,7 +776,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           return;
                         }
 
-                        final amount = double.tryParse(amtController.text) ?? 0.0;
+                        final amount = double.parse((double.tryParse(amtController.text) ?? 0.0).toStringAsFixed(2));
                         
                         // REQUIREMENT: Strictly use hardcoded office coordinates as the Source
                         const double srcLat = kOfficeLatitude;
@@ -2058,18 +2058,18 @@ Future<void> _calculateTripCost(
     AppLogger.log("GEO: Source (Office): $srcLat, $srcLng | Dest: ${dest.latitude}, ${dest.longitude}");
     AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
 
-    // REQUIREMENT: Use Distance * Fuel Price formula
+    // Updated REQUIREMENT: The company pays the fuel price for every 35 km
     double price = double.tryParse(priceCtrl.text) ?? 103.0;
 
     // Update the UI Fields
     mileageCtrl.text = roadDistanceKm.toStringAsFixed(2);
 
-    // New Formula: Amount = Distance * Price
-    double cost = roadDistanceKm * price;
+    // Calculation logic: (distance / 35) * fuelPrice
+    double cost = (roadDistanceKm / 35.0) * price;
 
     amtCtrl.text = cost.toStringAsFixed(2);
     onResult(
-        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Rate: ₹${price.toStringAsFixed(1)}/km");
+        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Fuel Price: ₹$price (for every 35 km)");
   } catch (e) {
     AppLogger.log("GEO Error: $e");
     onResult("Error calculating distance: $e");
