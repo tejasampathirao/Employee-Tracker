@@ -65,7 +65,7 @@ class DatabaseHelper {
     
     await db.insert('users', {
       'id': 1,
-      'name': 'Srinivas Reddy',
+      'name': 'Teja',
       'details': 'Chief Financial Officer',
       'phone': '9876543210',
       'password': 'password123',
@@ -257,6 +257,29 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getAllAttendance() async {
     final db = await instance.database;
     return await db.query('attendance', orderBy: 'id DESC');
+  }
+
+  // New Method to fetch previous calendar month's attendance
+  Future<List<Map<String, dynamic>>> getLastMonthAttendance() async {
+    final db = await instance.database;
+    final now = DateTime.now();
+
+    // Logic: DateTime(year, month - 1, 1) gets first day of previous month
+    // Logic: DateTime(year, month, 0) gets last day of previous month
+    final firstDayLastMonth = DateTime(now.year, now.month - 1, 1);
+    final lastDayLastMonth = DateTime(now.year, now.month, 0);
+
+    final startStr = DateFormat('yyyy-MM-dd').format(firstDayLastMonth);
+    final endStr = DateFormat('yyyy-MM-dd').format(lastDayLastMonth);
+
+    debugPrint("Fetching Attendance between $startStr and $endStr");
+
+    return await db.query(
+      'attendance',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [startStr, endStr],
+      orderBy: 'date DESC',
+    );
   }
 
   Future<Map<String, double>> getAttendanceSummary() async {

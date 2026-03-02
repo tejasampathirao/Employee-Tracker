@@ -13,68 +13,126 @@ class AttendanceHistoryView extends StatefulWidget {
 }
 
 class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
-  List<Map<String, dynamic>> _historyData = [];
-  bool _isLoading = true;
+  late Future<List<Map<String, dynamic>>> _lastMonthFuture;
 
   @override
   void initState() {
     super.initState();
-    _fetchData();
-  }
-
-  Future<void> _fetchData() async {
-    setState(() => _isLoading = true);
-    try {
-      final data = await DatabaseHelper.instance.getAllAttendance();
-      if (mounted) {
-        setState(() {
-          _historyData = data;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint("Error fetching attendance history: $e");
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _historyData = [];
-        });
-      }
-    }
+    // Store the future in initState to prevent re-fetching on every rebuild
+    _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildUnifiedSummary(),
+        _buildHeader(),
         Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _historyData.isEmpty
-                  ? const Center(child: Text('No history records found.'))
-                  : ListView.builder(
-                      itemCount: _historyData.length,
-                      padding: const EdgeInsets.all(12),
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: _lastMonthFuture,
+            builder: (context, snapshot) {
+              // 1. Loading State
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // 2. Error State
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                      const SizedBox(height: 16),
+                      Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
+                        }),
+                        child: const Text('Retry'),
+                      )
+                    ],
+                  ),
+                );
+              }
+
+              // 3. Empty State
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.calendar_today_outlined, color: Colors.grey, size: 48),
+                      SizedBox(height: 16),
+                      Text('No records found for last month.', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                );
+              }
+
+              // 4. Data State
+              final historyData = snapshot.data!;
+              return Column(
+                children: [
+                  _buildUnifiedSummary(historyData),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: historyData.length,
+                      padding: const EdgeInsets.all(16),
                       itemBuilder: (context, index) {
-                        final data = _historyData[index];
+                        final data = historyData[index];
                         return _buildUnifiedListItem(data);
                       },
                     ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildUnifiedSummary() {
-    if (_historyData.isEmpty) return const SizedBox.shrink();
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Attendance History',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Records for last month',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ],
+          ),
+          IconButton(
+            onPressed: () => setState(() {
+              _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
+            }),
+            icon: const Icon(Icons.refresh, color: Colors.blue),
+          ),
+        ],
+      ),
+    );
+  }
 
-    int officeCount = _historyData.where((item) => item['type'] == 'Office').length;
-    int awayCount = _historyData.where((item) => item['type'] == 'Away').length;
-    int failedCount = _historyData.where((item) => item['status'] == 'Failed').length;
+  Widget _buildUnifiedSummary(List<Map<String, dynamic>> dataList) {
+    if (dataList.isEmpty) return const SizedBox.shrink();
+
+    int officeCount = dataList.where((item) => item['type'] == 'Office').length;
+    int awayCount = dataList.where((item) => item['type'] == 'Away').length;
+    int failedCount = dataList.where((item) => item['status'] == 'Failed').length;
     
     return Card(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.blue[50],
       child: Padding(
         padding: const EdgeInsets.all(16.0),

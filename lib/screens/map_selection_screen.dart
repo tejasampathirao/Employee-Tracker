@@ -12,6 +12,7 @@ class MapSelectionScreen extends StatefulWidget {
 class _MapSelectionScreenState extends State<MapSelectionScreen> {
   LatLng? _selectedLatLng;
   bool _loading = true;
+  GoogleMapController? _mapController;
 
   @override
   void initState() {
@@ -23,46 +24,47 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // Test if location services are enabled.
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled.')),
-        );
-      }
-      _useDefaultLocation();
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
+    try {
+      // Test if location services are enabled.
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permissions are denied')),
+            const SnackBar(content: Text('Location services are disabled. Please enable GPS.')),
           );
         }
-        _useDefaultLocation();
         return;
       }
-    }
 
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permissions are permanently denied.')),
-        );
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Location permissions are denied.')),
+            );
+          }
+          return;
+        }
       }
-      _useDefaultLocation();
-      return;
-    }
 
-    try {
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are permanently denied.')),
+          );
+        }
+        return;
+      }
+
+      // Fetch the live position - explicitly awaiting high accuracy position
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
+
       if (mounted) {
         setState(() {
           _selectedLatLng = LatLng(position.latitude, position.longitude);
@@ -70,18 +72,16 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
         });
       }
     } catch (e) {
-      _useDefaultLocation();
+      debugPrint("Error fetching location: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error fetching live location: $e')),
+        );
+      }
     }
   }
 
-  void _useDefaultLocation() {
-    if (mounted) {
-      setState(() {
-        _selectedLatLng = const LatLng(12.9716, 77.5946); // Default to Bangalore
-        _loading = false;
-      });
-    }
-  }
+  // Removed _useDefaultLocation to prevent "random global location" issues
 
   @override
   Widget build(BuildContext context) {
@@ -91,21 +91,31 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
-      body: _loading
+      body: _loading || _selectedLatLng == null
           ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   CircularProgressIndicator(color: Colors.teal),
                   SizedBox(height: 16),
-                  Text('Fetching your live location...', style: TextStyle(color: Colors.teal)),
+                  Text(
+                    'Locating you...',
+                    style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'Please ensure GPS is enabled',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ),
                 ],
               ),
             )
           : Stack(
               children: [
                 GoogleMap(
-                  onMapCreated: (controller) {},
+                  onMapCreated: (controller) => _mapController = controller,
                   initialCameraPosition: CameraPosition(
                     target: _selectedLatLng!,
                     zoom: 16,
@@ -115,15 +125,13 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
                       _selectedLatLng = latLng;
                     });
                   },
-                  markers: _selectedLatLng == null
-                      ? {}
-                      : {
-                          Marker(
-                            markerId: const MarkerId('selected'),
-                            position: _selectedLatLng!,
-                            infoWindow: const InfoWindow(title: 'Destination'),
-                          ),
-                        },
+                  markers: {
+                    Marker(
+                      markerId: const MarkerId('selected'),
+                      position: _selectedLatLng!,
+                      infoWindow: const InfoWindow(title: 'Destination'),
+                    ),
+                  },
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
                   mapToolbarEnabled: true,
@@ -142,7 +150,7 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
                       ],
                     ),
                     child: const Text(
-                      'Tap on the map to drop a pin at your destination',
+                      'Tap the map to set your destination pin',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
                     ),

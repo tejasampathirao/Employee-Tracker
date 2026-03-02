@@ -188,6 +188,27 @@ class MqttHandler {
     publish(attendanceTopic, jsonString); // Using attendance topic for work logs
   }
 
+  /// Function 8: Publishes a work report generation event
+  void publishWorkReport({
+    required String employeeId,
+    required String fromDate,
+    required String toDate,
+    required String totalWorked,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "work_report",
+      "employee_id": employeeId,
+      "from_date": fromDate,
+      "to_date": toDate,
+      "total_worked": totalWorked,
+      "timestamp": DateTime.now().toIso8601String()
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Work Report]: Sending Payload: $jsonString');
+    publish(attendanceTopic, jsonString); // Using attendance topic for report events
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};

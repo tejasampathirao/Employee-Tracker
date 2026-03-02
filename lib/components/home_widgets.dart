@@ -18,7 +18,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/profile_edit_screen.dart';
 import 'overtime_calculator_card.dart';
-import '../screens/map_selection_screen.dart';
+import '../constants.dart';
 import '../utils/app_logger.dart';
 import '../screens/debug_logs_screen.dart';
 
@@ -302,11 +302,6 @@ Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updat
 
   return Scaffold(
     backgroundColor: Colors.transparent,
-    floatingActionButton: FloatingActionButton(
-      onPressed: () => _showChatbotService(context),
-      backgroundColor: Colors.blue,
-      child: const Icon(Icons.chat_bubble, color: Colors.white),
-    ),
     body: SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -321,7 +316,7 @@ Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updat
               crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 0.9,
+              childAspectRatio: 0.85, // Adjusted from 0.9 to give more vertical space
             ),
             itemCount: services.length,
             itemBuilder: (context, index) {
@@ -688,28 +683,43 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            final LatLng? result = await Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const MapSelectionScreen()),
+                            // Show a loading snackbar or indicator if needed
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Fetching onsite coordinates...'), duration: Duration(seconds: 1)),
                             );
-                            if (result != null) {
+
+                            try {
+                              // Fetch Current Position in Background (No Map UI)
+                              Position pos = await Geolocator.getCurrentPosition(
+                                locationSettings: const LocationSettings(
+                                  accuracy: LocationAccuracy.high,
+                                ),
+                              );
+                              
+                              LatLng onsiteLatLng = LatLng(pos.latitude, pos.longitude);
+                              
                               setModalState(() {
-                                selectedLatLng = result;
+                                selectedLatLng = onsiteLatLng;
                               });
-                              // Auto-calculate on selection
+
+                              // Auto-calculate distance and amount immediately
                               await _calculateTripCost(
                                 selectedLatLng,
                                 priceController,
                                 mileageController,
                                 amtController,
                                 (msg) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
                                 },
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error fetching location: $e')),
                               );
                             }
                           },
-                          icon: const Icon(Icons.map),
-                          label: const Text('📍 Choose Destination'),
+                          icon: const Icon(Icons.my_location),
+                          label: const Text('📍 Get Current Onsite Location'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue[50],
                             foregroundColor: Colors.blue,
@@ -717,31 +727,30 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           ),
                         ),
                       ),
-                      if (selectedLatLng != null) ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: () async {
-                            await _calculateTripCost(
-                              selectedLatLng,
-                              priceController,
-                              mileageController,
-                              amtController,
-                              (msg) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
-                              },
-                            );
-                          },
-                          icon: const Icon(Icons.refresh, color: Colors.blue),
-                        ),
-                      ]
                     ],
                   ),
                   if (selectedLatLng != null)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        'Selected: ${selectedLatLng!.latitude.toStringAsFixed(4)}, ${selectedLatLng!.longitude.toStringAsFixed(4)}',
-                        style: const TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
+                      padding: const EdgeInsets.only(top: 12.0),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green[100]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Onsite Location Captured: ${selectedLatLng!.latitude.toStringAsFixed(4)}, ${selectedLatLng!.longitude.toStringAsFixed(4)}',
+                                style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   const SizedBox(height: 16),
@@ -763,10 +772,9 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
 
                         final amount = double.tryParse(amtController.text) ?? 0.0;
                         
-                        // Fetch Current Position with High Accuracy
-                        final Position currentPos = await Geolocator.getCurrentPosition(
-                          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-                        );
+                        // REQUIREMENT: Strictly use hardcoded office coordinates as the Source
+                        const double srcLat = kOfficeLatitude;
+                        const double srcLng = kOfficeLongitude;
 
                         final expense = {
                           'type': 'Travel',
@@ -776,30 +784,30 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           'date': DateTime.now().toIso8601String(),
                           'status': 'Pending',
                           'visit_type': visitType,
-                          'src_lat': currentPos.latitude,
-                          'src_lng': currentPos.longitude,
+                          'src_lat': srcLat,
+                          'src_lng': srcLng,
                           'dest_lat': selectedLatLng!.latitude,
                           'dest_lng': selectedLatLng!.longitude,
                         };
 
                         await DatabaseHelper.instance.insertExpense(expense);
                         
-                        // Calculate Road Distance again for payload
+                        // Calculate Road Distance (Km) between Office and Destination using 1.42 factor
                         double straightLineMeters = Geolocator.distanceBetween(
-                          currentPos.latitude, currentPos.longitude, selectedLatLng!.latitude, selectedLatLng!.longitude);
+                          srcLat, srcLng, selectedLatLng!.latitude, selectedLatLng!.longitude);
                         double roadDistanceKm = (straightLineMeters * 1.42) / 1000;
 
                         // Fetch user info for MQTT payload
                         final user = await DatabaseHelper.instance.getUser();
                         final String employeeId = user?['name'] ?? 'Teja';
 
-                        // Publish via MQTT with route info
+                        // Publish via MQTT with route info (Office as source)
                         mqttClient.publishTravelExpense(
                           amount: amount,
                           description: "$visitType: ${descController.text}",
                           visitType: visitType,
-                          srcLat: currentPos.latitude,
-                          srcLng: currentPos.longitude,
+                          srcLat: srcLat,
+                          srcLng: srcLng,
                           destLat: selectedLatLng!.latitude,
                           destLng: selectedLatLng!.longitude,
                           distanceKm: double.parse(roadDistanceKm.toStringAsFixed(2)),
@@ -808,7 +816,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
 
                         if (context.mounted) {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully!')));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully! (From Office)')));
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -917,7 +925,7 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
   );
 }
 
-void _generateWorkReport(BuildContext context) async {
+void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
   final DateTimeRange? picked = await showDateRangePicker(
     context: context,
     initialDateRange: DateTimeRange(
@@ -942,6 +950,18 @@ void _generateWorkReport(BuildContext context) async {
 
   if (picked != null) {
     final String total = await DatabaseHelper.instance.calculateHoursInRange(picked.start, picked.end);
+    
+    // Fetch user info for MQTT payload
+    final user = await DatabaseHelper.instance.getUser();
+    final String employeeId = user?['name'] ?? 'Teja';
+
+    // REQUIREMENT: Publish Work Report Event via MQTT
+    mqttClient.publishWorkReport(
+      employeeId: employeeId,
+      fromDate: DateFormat('yyyy-MM-dd').format(picked.start),
+      toDate: DateFormat('yyyy-MM-dd').format(picked.end),
+      totalWorked: total,
+    );
     
     if (context.mounted) {
       showDialog(
@@ -986,7 +1006,7 @@ void _generateWorkReport(BuildContext context) async {
   }
 }
 
-void _showTimeTrackerService(BuildContext context) {
+void _showTimeTrackerService(BuildContext context, MqttHandler mqttClient) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1019,7 +1039,7 @@ void _showTimeTrackerService(BuildContext context) {
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton.icon(
-                  onPressed: () => _generateWorkReport(context),
+                  onPressed: () => _generateWorkReport(context, mqttClient),
                   icon: const Icon(Icons.summarize_outlined),
                   label: const Text('Generate Work Report', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
@@ -1355,7 +1375,7 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
           _showAttendanceService(context, mqttClient, updateState);
           break;
         case 'Time Tracker':
-          _showTimeTrackerService(context);
+          _showTimeTrackerService(context, mqttClient);
           break;
         case 'Work':
           _showWorkService(context, mqttClient);
@@ -2082,52 +2102,35 @@ Future<void> _calculateTripCost(
   if (dest == null) return;
 
   try {
-    // Check/Request permissions before getting position
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        onResult("Location permission denied. Cannot calculate distance.");
-        return;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      onResult("Location permissions are permanently denied. Please enable them in settings.");
-      return;
-    }
-
-    // Fetch Current Live Position with High Accuracy
-    final Position pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
+    // REQUIREMENT: Use strictly hardcoded office coordinates as the Source
+    const double srcLat = kOfficeLatitude;
+    const double srcLng = kOfficeLongitude;
     
-    // Calculate Straight Line Distance in Meters
+    // Calculate Straight Line Distance in Meters between Office and Destination
     double straightDistance = Geolocator.distanceBetween(
-        pos.latitude, pos.longitude, dest.latitude, dest.longitude);
+        srcLat, srcLng, dest.latitude, dest.longitude);
 
-    // Road Factor Formula: (distanceInMeters * 1.3) / 1000 to get Km
-    // This accounts for road winding which is usually ~30% more than straight line
+    // Road Factor Formula: (distanceInMeters * 1.42) / 1000 to get Km
+    // This accounts for road winding and driving estimate factor
     double roadDistanceKm = (straightDistance * 1.42) / 1000;
     
-    AppLogger.log("GEO: Source: ${pos.latitude}, ${pos.longitude} | Dest: ${dest.latitude}, ${dest.longitude}");
+    AppLogger.log("GEO: Source (Office): $srcLat, $srcLng | Dest: ${dest.latitude}, ${dest.longitude}");
     AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
 
+    // REQUIREMENT: Use Distance * Fuel Price formula
     double price = double.tryParse(priceCtrl.text) ?? 103.0;
 
     // Update the UI Fields
     mileageCtrl.text = roadDistanceKm.toStringAsFixed(2);
 
-    // Calculate Cost: (Distance / Mileage) * Fuel Price
-    // Assuming a standard mileage of 35 km/L for calculation
-    double liters = roadDistanceKm / 35.0; 
-    double cost = liters * price;
+    // New Formula: Amount = Distance * Price
+    double cost = roadDistanceKm * price;
 
     amtCtrl.text = cost.toStringAsFixed(2);
     onResult(
-        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Source: Live Location");
+        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Rate: ₹${price.toStringAsFixed(1)}/km");
   } catch (e) {
     AppLogger.log("GEO Error: $e");
-    onResult("Error fetching live location: $e");
+    onResult("Error calculating distance: $e");
   }
 }
