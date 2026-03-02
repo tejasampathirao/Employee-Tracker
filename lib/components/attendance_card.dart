@@ -197,19 +197,21 @@ class _AttendanceCardState extends State<AttendanceCard> {
         
         AppLogger.log("CHECK-IN: Distance to office: ${distance.toStringAsFixed(0)}m");
 
+        // STRICT GEOFENCE ENFORCEMENT
         if (distance > 100) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('You are not at the office! (Distance: ${distance.toStringAsFixed(0)} meters)'),
+                content: Text('Check-in failed: You are not at the office location. (Distance: ${distance.toStringAsFixed(0)}m)'),
                 backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
               ),
             );
           }
-          return; // Requirement 1: Strict Return
+          return; // STOP execution here: No timer, No MQTT
         }
 
-        // Proceed with check-in
+        // Proceed with check-in only if within 100m
         final id = await DatabaseHelper.instance.checkIn(
           timeString, 
           dateString, 

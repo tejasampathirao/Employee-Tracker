@@ -763,8 +763,10 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
 
                         final amount = double.tryParse(amtController.text) ?? 0.0;
                         
-                        // Fetch Current Position
-                        final Position currentPos = await Geolocator.getCurrentPosition();
+                        // Fetch Current Position with High Accuracy
+                        final Position currentPos = await Geolocator.getCurrentPosition(
+                          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+                        );
 
                         final expense = {
                           'type': 'Travel',
@@ -785,7 +787,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         // Calculate Road Distance again for payload
                         double straightLineMeters = Geolocator.distanceBetween(
                           currentPos.latitude, currentPos.longitude, selectedLatLng!.latitude, selectedLatLng!.longitude);
-                        double roadDistanceKm = (straightLineMeters * 1.3) / 1000;
+                        double roadDistanceKm = (straightLineMeters * 1.42) / 1000;
 
                         // Fetch user info for MQTT payload
                         final user = await DatabaseHelper.instance.getUser();
@@ -989,49 +991,54 @@ void _showTimeTrackerService(BuildContext context) {
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-    builder: (context) => Container(
-      height: MediaQuery.of(context).size.height * 0.5, // Reduced height since list is removed
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_ios, size: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_ios, size: 20),
+                  ),
+                  const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 40), // Balance the back button
+                ],
               ),
-              const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 40), // Balance the back button
+              const SizedBox(height: 20),
+              const RealTimeTimeLogs(),
+              const SizedBox(height: 30),
+              
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton.icon(
+                  onPressed: () => _generateWorkReport(context),
+                  icon: const Icon(Icons.summarize_outlined),
+                  label: const Text('Generate Work Report', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[800],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: Text(
+                  'Select a date range to view your total logs.',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 20),
-          const RealTimeTimeLogs(),
-          const SizedBox(height: 30),
-          
-          SizedBox(
-            width: double.infinity,
-            height: 55,
-            child: ElevatedButton.icon(
-              onPressed: () => _generateWorkReport(context),
-              icon: const Icon(Icons.summarize_outlined),
-              label: const Text('Generate Work Report', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[800],
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: Text(
-              'Select a date range to view your total logs.',
-              style: TextStyle(color: Colors.grey[500], fontSize: 13),
-            ),
-          ),
-        ],
+        ),
       ),
     ),
   );
@@ -2074,23 +2081,53 @@ Future<void> _calculateTripCost(
 ) async {
   if (dest == null) return;
 
-  final Position pos = await Geolocator.getCurrentPosition();
-  double straightDistance = Geolocator.distanceBetween(
-      pos.latitude, pos.longitude, dest.latitude, dest.longitude);
+  try {
+    // Check/Request permissions before getting position
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        onResult("Location permission denied. Cannot calculate distance.");
+        return;
+      }
+    }
 
-  // Road Factor Formula: (distanceInMeters * 1.3) / 1000
-  double roadDistanceKm = (straightDistance * 1.3) / 1000;
-  
-  AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
+    if (permission == LocationPermission.deniedForever) {
+      onResult("Location permissions are permanently denied. Please enable them in settings.");
+      return;
+    }
 
-  double price = double.tryParse(priceCtrl.text) ?? 103.0;
+    // Fetch Current Live Position with High Accuracy
+    final Position pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+    
+    // Calculate Straight Line Distance in Meters
+    double straightDistance = Geolocator.distanceBetween(
+        pos.latitude, pos.longitude, dest.latitude, dest.longitude);
 
-  mileageCtrl.text = roadDistanceKm.toStringAsFixed(2);
+    // Road Factor Formula: (distanceInMeters * 1.3) / 1000 to get Km
+    // This accounts for road winding which is usually ~30% more than straight line
+    double roadDistanceKm = (straightDistance * 1.42) / 1000;
+    
+    AppLogger.log("GEO: Source: ${pos.latitude}, ${pos.longitude} | Dest: ${dest.latitude}, ${dest.longitude}");
+    AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
 
-  double liters = roadDistanceKm / 35.0; // Using default mileage for cost calculation if box is now distance
-  double cost = liters * price;
+    double price = double.tryParse(priceCtrl.text) ?? 103.0;
 
-  amtCtrl.text = cost.toStringAsFixed(2);
-  onResult(
-      "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Fuel needed: ${liters.toStringAsFixed(2)} L");
+    // Update the UI Fields
+    mileageCtrl.text = roadDistanceKm.toStringAsFixed(2);
+
+    // Calculate Cost: (Distance / Mileage) * Fuel Price
+    // Assuming a standard mileage of 35 km/L for calculation
+    double liters = roadDistanceKm / 35.0; 
+    double cost = liters * price;
+
+    amtCtrl.text = cost.toStringAsFixed(2);
+    onResult(
+        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Source: Live Location");
+  } catch (e) {
+    AppLogger.log("GEO Error: $e");
+    onResult("Error fetching live location: $e");
+  }
 }

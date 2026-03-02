@@ -44,7 +44,9 @@ class DatabaseHelper {
     if (oldVersion < 11) {
       try {
         await db.execute('ALTER TABLE expenses ADD COLUMN bill_image TEXT');
-      } catch (e) {}
+      } catch (e) {
+        debugPrint("Note: expenses bill_image column already exists or error: $e");
+      }
     }
     if (oldVersion < 12) {
       try {
@@ -52,7 +54,9 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE expenses ADD COLUMN src_lng REAL');
         await db.execute('ALTER TABLE expenses ADD COLUMN dest_lat REAL');
         await db.execute('ALTER TABLE expenses ADD COLUMN dest_lng REAL');
-      } catch (e) {}
+      } catch (e) {
+        debugPrint("Note: expenses location columns already exist or error: $e");
+      }
     }
   }
 
@@ -462,13 +466,23 @@ class DatabaseHelper {
     final startStr = DateFormat('yyyy-MM-dd').format(start);
     final endStr = DateFormat('yyyy-MM-dd').format(end);
 
-    // Query sum of hours from timelogs table for the date range
-    final result = await db.rawQuery(
-      'SELECT SUM(hours) as total FROM timelogs WHERE date >= ? AND date <= ?',
-      [startStr, endStr],
+    // Query all completed attendance records in the date range
+    final result = await db.query(
+      'attendance',
+      where: 'date >= ? AND date <= ? AND checkOutTime IS NOT NULL',
+      whereArgs: [startStr, endStr],
     );
 
-    double totalHours = (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    double totalHours = 0.0;
+    for (var row in result) {
+      try {
+        final checkIn = DateTime.parse(row['checkInTime'] as String);
+        final checkOut = DateTime.parse(row['checkOutTime'] as String);
+        totalHours += checkOut.difference(checkIn).inSeconds / 3600.0;
+      } catch (e) {
+        debugPrint("Error parsing attendance record for report: $e");
+      }
+    }
     
     int h = totalHours.floor();
     int m = ((totalHours - h) * 60).round();

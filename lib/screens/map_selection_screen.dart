@@ -16,17 +16,66 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    _determinePosition();
   }
 
-  Future<void> _getCurrentLocation() async {
+  Future<void> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled.')),
+        );
+      }
+      _useDefaultLocation();
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied')),
+          );
+        }
+        _useDefaultLocation();
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permissions are permanently denied.')),
+        );
+      }
+      _useDefaultLocation();
+      return;
+    }
+
     try {
-      Position position = await Geolocator.getCurrentPosition();
-      setState(() {
-        _selectedLatLng = LatLng(position.latitude, position.longitude);
-        _loading = false;
-      });
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) {
+        setState(() {
+          _selectedLatLng = LatLng(position.latitude, position.longitude);
+          _loading = false;
+        });
+      }
     } catch (e) {
+      _useDefaultLocation();
+    }
+  }
+
+  void _useDefaultLocation() {
+    if (mounted) {
       setState(() {
         _selectedLatLng = const LatLng(12.9716, 77.5946); // Default to Bangalore
         _loading = false;
@@ -43,13 +92,23 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
         foregroundColor: Colors.white,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.teal),
+                  SizedBox(height: 16),
+                  Text('Fetching your live location...', style: TextStyle(color: Colors.teal)),
+                ],
+              ),
+            )
           : Stack(
               children: [
                 GoogleMap(
+                  onMapCreated: (controller) {},
                   initialCameraPosition: CameraPosition(
                     target: _selectedLatLng!,
-                    zoom: 15,
+                    zoom: 16,
                   ),
                   onTap: (latLng) {
                     setState(() {
@@ -62,10 +121,32 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
                           Marker(
                             markerId: const MarkerId('selected'),
                             position: _selectedLatLng!,
+                            infoWindow: const InfoWindow(title: 'Destination'),
                           ),
                         },
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
+                  mapToolbarEnabled: true,
+                ),
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  right: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4),
+                      ],
+                    ),
+                    child: const Text(
+                      'Tap on the map to drop a pin at your destination',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                    ),
+                  ),
                 ),
                 Positioned(
                   bottom: 30,
@@ -82,6 +163,7 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      elevation: 4,
                     ),
                     child: const Text(
                       'Confirm Destination',
