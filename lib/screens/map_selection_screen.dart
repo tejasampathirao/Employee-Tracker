@@ -12,7 +12,6 @@ class MapSelectionScreen extends StatefulWidget {
 class _MapSelectionScreenState extends State<MapSelectionScreen> {
   LatLng? _selectedLatLng;
   bool _loading = true;
-  GoogleMapController? _mapController;
 
   @override
   void initState() {
@@ -115,7 +114,6 @@ class _MapSelectionScreenState extends State<MapSelectionScreen> {
           : Stack(
               children: [
                 GoogleMap(
-                  onMapCreated: (controller) => _mapController = controller,
                   initialCameraPosition: CameraPosition(
                     target: _selectedLatLng!,
                     zoom: 16,

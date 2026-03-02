@@ -77,6 +77,20 @@ class _AttendanceCardState extends State<AttendanceCard> {
       android: initializationSettingsAndroid,
     );
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    // REQUIREMENT: Request Runtime Permissions for Notifications (Android 13+) 
+    // and Exact Alarms (Android 12+)
+    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidImplementation != null) {
+      // Request notification permission
+      await androidImplementation.requestNotificationsPermission();
+      // Request exact alarm permission
+      await androidImplementation.requestExactAlarmsPermission();
+      AppLogger.log("NOTIFICATIONS: Runtime permissions requested.");
+    }
   }
 
   Future<void> _scheduleNextShiftAlarm() async {

@@ -684,9 +684,11 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         child: ElevatedButton.icon(
                           onPressed: () async {
                             // Show a loading snackbar or indicator if needed
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Fetching onsite coordinates...'), duration: Duration(seconds: 1)),
-                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Fetching onsite coordinates...'), duration: Duration(seconds: 1)),
+                              );
+                            }
 
                             try {
                               // Fetch Current Position in Background (No Map UI)
@@ -709,13 +711,17 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                                 mileageController,
                                 amtController,
                                 (msg) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                                  }
                                 },
                               );
                             } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error fetching location: $e')),
-                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error fetching location: $e')),
+                                );
+                              }
                             }
                           },
                           icon: const Icon(Icons.my_location),
@@ -1300,71 +1306,6 @@ class _ExpenseSectionState extends State<ExpenseSection> {
       ],
     );
   }
-}
-
-void _showChatbotService(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-    builder: (context) => Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_ios, size: 20),
-              ),
-              const Expanded(
-                child: Center(
-                  child: Text('HR Helpdesk Bot', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                ),
-              ),
-              const SizedBox(width: 48),
-            ],
-          ),
-          const Divider(),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildChatBubble('Hello! How can I help you with HR queries today?', false),
-                _buildChatBubble('How many leaves do I have left?', true),
-                _buildChatBubble('You have 12 Casual leaves and 15 Earned leaves remaining.', false),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Ask a question...',
-                suffixIcon: Icon(Icons.send),
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildChatBubble(String text, bool isUser) {
-  return Align(
-    alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-    child: Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isUser ? Colors.blue : Colors.grey[200],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(text, style: TextStyle(color: isUser ? Colors.white : Colors.black)),
-    ),
-  );
 }
 
 Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MqttHandler mqttClient, Function updateState) {
