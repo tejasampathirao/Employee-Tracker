@@ -11,6 +11,7 @@ import 'attendance_card.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
 import '../network/report_service.dart';
+import '../utils/excel_export_helper.dart'; // Added for Excel export
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -182,7 +183,7 @@ Widget _buildGreetingSection() {
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
-      final String name = snapshot.data?['name'] ?? 'Srinivas Reddy';
+      final String name = snapshot.data?['name']?.toString() ?? 'Srinivas Reddy';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -820,9 +821,30 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           employeeId: employeeId,
                         );
 
+                        // NEW: Export to Excel
+                        final excelPath = await ExcelExportHelper.appendToExcel(
+                          sheetName: "Travel Logs",
+                          headers: ["Employee Name", "Date", "Service Type", "Visit Type", "Distance (km)", "Amount (₹)", "Description"],
+                          rowData: [
+                            employeeId,
+                            DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+                            "Travel Expense",
+                            visitType,
+                            roadDistanceKm.toStringAsFixed(2),
+                            amount,
+                            descController.text,
+                          ],
+                        );
+
                         if (context.mounted) {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Travel Expense Logged Successfully! (From Office)')));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Travel Expense Logged & Saved to Excel!\nPath: $excelPath'),
+                              duration: const Duration(seconds: 5),
+                              action: SnackBarAction(label: 'OK', onPressed: () {}),
+                            ),
+                          );
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -909,10 +931,27 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                       employeeId: employeeId,
                     );
 
+                    // NEW: Export to Excel
+                    final excelPath = await ExcelExportHelper.appendToExcel(
+                      sheetName: "Daily Work Logs",
+                      headers: ["Employee Name", "Date", "Service Type", "Work Type", "Description"],
+                      rowData: [
+                        employeeId,
+                        DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+                        "Daily Work Log",
+                        typeController.text,
+                        descController.text,
+                      ],
+                    );
+
                     if (context.mounted) {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Work details published via MQTT!'), backgroundColor: Colors.green)
+                        SnackBar(
+                          content: Text('Work details published & Saved to Excel!\nPath: $excelPath'),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 5),
+                        )
                       );
                     }
                   },
@@ -969,6 +1008,20 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
       totalWorked: total,
     );
     
+    // NEW: Export to Excel
+    final excelPath = await ExcelExportHelper.appendToExcel(
+      sheetName: "Work Logs",
+      headers: ["Employee Name", "Date Generated", "Service Type", "From Date", "To Date", "Total Worked"],
+      rowData: [
+        employeeId,
+        DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+        "Work Report",
+        DateFormat('yyyy-MM-dd').format(picked.start),
+        DateFormat('yyyy-MM-dd').format(picked.end),
+        total,
+      ],
+    );
+
     if (context.mounted) {
       showDialog(
         context: context,
@@ -990,13 +1043,21 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
                 '${DateFormat('MMM dd, yyyy').format(picked.start)} - ${DateFormat('MMM dd, yyyy').format(picked.end)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               const Divider(),
               const SizedBox(height: 10),
               const Text('Total Worked:', style: TextStyle(fontSize: 14)),
               Text(
                 total,
                 style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
+              ),
+              const SizedBox(height: 10),
+              const Divider(),
+              const SizedBox(height: 10),
+              Text('Excel Saved To:', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+              Text(
+                excelPath,
+                style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic),
               ),
             ],
           ),
@@ -1111,6 +1172,20 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
       amount: amt,
       employeeId: employeeId,
       billImagePath: savedImagePath,
+    );
+
+    // NEW: Export to Excel
+    await ExcelExportHelper.appendToExcel(
+      sheetName: "Additional Expenses",
+      headers: ["Employee Name", "Date", "Service Type", "Category", "Amount (₹)", "Description"],
+      rowData: [
+        employeeId,
+        DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+        "Additional Expense",
+        category,
+        amt,
+        description,
+      ],
     );
   }
 
@@ -1450,8 +1525,8 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
                   child: const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
                 ),
                 const SizedBox(height: 16),
-                Text(user['name'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                Text(user['details'], style: const TextStyle(color: Colors.grey)),
+                Text(user['name'] ?? 'Unknown Name', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text(user['details'] ?? 'No details provided', style: const TextStyle(color: Colors.grey)),
               ],
             ),
           ),
@@ -1466,8 +1541,8 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
                 context,
                 MaterialPageRoute(
                   builder: (context) => ProfileEditScreen(
-                    currentName: user['name'],
-                    currentDetails: user['details'],
+                    currentName: user['name']?.toString() ?? 'Teja',
+                    currentDetails: user['details']?.toString() ?? 'Chief Financial Officer',
                   ),
                 ),
               );
@@ -1843,6 +1918,54 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
           ],
         ),
         const SizedBox(height: 20),
+        
+        // Paid Leave Balance Tracker
+        FutureBuilder<Map<String, dynamic>?>(
+          future: DatabaseHelper.instance.getUser(),
+          builder: (context, userSnapshot) {
+            final empId = userSnapshot.data?['emp_id'] ?? 'AMP-001';
+            final year = DateTime.now().year;
+            
+            return FutureBuilder<int>(
+              future: DatabaseHelper.instance.getUsedPaidLeaves(empId, year),
+              builder: (context, leaveSnapshot) {
+                final used = leaveSnapshot.data ?? 0;
+                final balance = 12 - used;
+                
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [Colors.blue[700]!, Colors.blue[400]!]),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Paid Leave Balance', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          const SizedBox(height: 5),
+                          Text('$balance / 12', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                          Text('Remaining for $year', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                        child: const Icon(Icons.beach_access, color: Colors.white, size: 30),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        
+        const SizedBox(height: 30),
         Row(
           children: [
             Expanded(child: _buildLeaveBalanceCard('Casual', 12, 0, Colors.blue)),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/home.dart';
 import '../screens/forgot_password_screen.dart';
+import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,10 +14,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
   
-  bool _isObscured = true;
   bool _isLoading = false;
   double _opacity = 0.0;
 
@@ -30,8 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _nameController.dispose();
+    _idController.dispose();
     super.dispose();
   }
 
@@ -41,12 +41,18 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final user = await DatabaseHelper.instance.authenticateUser(
-        _emailController.text.trim(),
-        _passwordController.text,
+      final String nameInput = _nameController.text.trim();
+      final String idInput = _idController.text.trim();
+
+      // Check database for credentials
+      final user = await DatabaseHelper.instance.authenticateUserByNameAndId(
+        nameInput,
+        idInput,
       );
 
       if (user != null) {
+        final String role = user['role'] ?? 'Employee';
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -55,13 +61,18 @@ class _LoginScreenState extends State<LoginScreen> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+
+          if (role == 'Admin') {
+            Navigator.pushNamedAndRemoveUntil(context, AdminDashboard.id, (route) => false);
+          } else {
+            Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+          }
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Invalid email or password. Please try again.'),
+              content: Text('Invalid credentials.'),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -81,6 +92,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Container(
@@ -91,9 +104,9 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.blue[900]!.withValues(alpha: 0.05),
+              theme.colorScheme.primary.withOpacity(0.05),
               Colors.white,
-              Colors.green[50]!.withValues(alpha: 0.3),
+              Colors.blue[50]!.withOpacity(0.3),
             ],
           ),
         ),
@@ -104,77 +117,125 @@ class _LoginScreenState extends State<LoginScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 30.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                          ],
+                        ),
+                        child: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.primary, size: 20),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
                   const SizedBox(height: 20),
-                  IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(8),
+                  // App Logo
+                  Hero(
+                    tag: 'app_logo',
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
+                          BoxShadow(
+                            color: theme.colorScheme.primary.withOpacity(0.1),
+                            blurRadius: 20,
+                            spreadRadius: 5,
+                          )
                         ],
                       ),
-                      child: const Icon(Icons.arrow_back_ios_new, color: Colors.blue, size: 20),
+                      child: Image.asset(
+                        'images/app_logo.png',
+                        height: 100,
+                        width: 100,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          Icons.business_center_rounded,
+                          size: 100,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     ),
-                    onPressed: () => Navigator.pop(context),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 30),
                   Text(
-                    'Welcome Back',
+                    'Employee Login',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue[900],
+                      color: theme.colorScheme.primary,
+                      letterSpacing: -0.5,
                     ),
                   ),
-                  const Text(
-                    'Log in to your workspace to continue.',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter your details to continue',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 50),
                   Form(
                     key: _formKey,
                     child: Column(
                       children: <Widget>[
-                        _buildEmailField(),
-                        const SizedBox(height: 20.0),
-                        _buildPasswordField(),
-                        const SizedBox(height: 15),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()));
-                            },
-                            child: const Text('Forgot Password?', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600)),
-                          ),
+                        _buildTextField(
+                          controller: _nameController,
+                          hint: 'Employee Name',
+                          icon: Icons.person_outline_rounded,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) return 'Enter full name';
+                            return null;
+                          },
                         ),
-                        const SizedBox(height: 40.0),
-                        _buildLoginButton(),
-                        const SizedBox(height: 40),
-                        const Row(
+                        const SizedBox(height: 20.0),
+                        _buildTextField(
+                          controller: _idController,
+                          hint: 'Employee ID (e.g., AMP-001)',
+                          icon: Icons.badge_outlined,
+                          keyboardType: TextInputType.text,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) return 'Enter your unique ID';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 50.0),
+                        _buildLoginButton(theme),
+                        const SizedBox(height: 30),
+                        Text(
+                          "Contact Admin if you forgot your ID",
+                          style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Expanded(child: Divider()),
-                            Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 16),
-                              child: Text('OR', style: TextStyle(color: Colors.grey)),
+                            Text(
+                              "Don't have an account? ",
+                              style: TextStyle(color: Colors.grey[600]),
                             ),
-                            Expanded(child: Divider()),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.pushNamed(context, 'register_screen');
+                              },
+                              child: Text(
+                                'Register Now',
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 30),
-                        Center(
-                          child: Wrap(
-                            spacing: 20,
-                            children: [
-                              _buildSocialButton(Icons.fingerprint, Colors.blue),
-                              _buildSocialButton(Icons.face_unlock_rounded, Colors.green),
-                            ],
-                          ),
-                        ),
+                        const SizedBox(height: 40),
                       ],
                     ),
                   ),
@@ -187,93 +248,64 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildEmailField() {
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: theme.colorScheme.primary.withOpacity(0.05),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
         ],
       ),
       child: TextFormField(
-        controller: _emailController,
-        keyboardType: TextInputType.emailAddress,
-        validator: (value) {
-          if (value == null || value.isEmpty) return 'Please enter your email';
-          final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-          if (!emailRegex.hasMatch(value)) return 'Please enter a valid email address';
-          return null;
-        },
+        controller: controller,
+        keyboardType: keyboardType,
+        validator: validator,
+        style: const TextStyle(fontWeight: FontWeight.w500),
         decoration: InputDecoration(
-          hintText: 'Email Address',
+          hintText: hint,
           hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-          prefixIcon: Icon(Icons.alternate_email, color: Colors.blue[900], size: 22),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          prefixIcon: Icon(icon, color: theme.colorScheme.primary, size: 22),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
         ),
       ),
     );
   }
 
-  Widget _buildPasswordField() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: TextFormField(
-        controller: _passwordController,
-        obscureText: _isObscured,
-        validator: (value) {
-          if (value == null || value.isEmpty) return 'Please enter your password';
-          if (value.length < 6) return 'Password must be at least 6 characters';
-          return null;
-        },
-        decoration: InputDecoration(
-          hintText: 'Password',
-          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-          prefixIcon: Icon(Icons.lock_open_rounded, color: Colors.blue[900], size: 22),
-          suffixIcon: IconButton(
-            icon: Icon(
-              _isObscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: Colors.grey,
-              size: 20,
-            ),
-            onPressed: () => setState(() => _isObscured = !_isObscured),
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoginButton() {
+  Widget _buildLoginButton(ThemeData theme) {
     return Container(
       width: double.infinity,
-      height: 58,
+      height: 60,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
-          colors: [Colors.blue[800]!, const Color(0xff21b409)],
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.primary.withBlue(255),
+          ],
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.blue[800]!.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: theme.colorScheme.primary.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -282,7 +314,7 @@ class _LoginScreenState extends State<LoginScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         ),
         child: _isLoading
             ? const SizedBox(
@@ -292,20 +324,14 @@ class _LoginScreenState extends State<LoginScreen> {
               )
             : const Text(
                 'LOG IN',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.5),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 1.2,
+                ),
               ),
       ),
-    );
-  }
-
-  Widget _buildSocialButton(IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[200]!),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Icon(icon, color: color, size: 30),
     );
   }
 }

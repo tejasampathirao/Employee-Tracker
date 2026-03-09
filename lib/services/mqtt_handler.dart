@@ -238,29 +238,56 @@ class MqttHandler {
       for (final message in messages) {
         final recMess = message.payload as MqttPublishMessage;
         final content = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+        final topic = message.topic;
         
-        topicMessages[message.topic] = content;
+        topicMessages[topic] = content;
 
-        // Handle Incoming Expenses
-        if (message.topic == expensesTopic) {
-          try {
-            final data = jsonDecode(content);
-            if (data['type'] == 'expense_claim') {
-              // Standardize for local DB
-              final expense = {
-                'type': 'General', // Default type
-                'category': data['category'],
-                'description': data['description'],
-                'amount': data['amount'],
-                'date': data['timestamp'],
-                'status': 'Approved' // Incoming claims from server are pre-approved or for syncing
+        try {
+          final data = jsonDecode(content);
+          final String type = data['type'] ?? '';
+
+          switch (type) {
+            case 'live_location':
+              final locationData = {
+                'employee_id': data['employee_id'] ?? 'Unknown',
+                'latitude': data['lat'],
+                'longitude': data['lng'],
+                'speed': data['speed'],
+                'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
               };
-              await DatabaseHelper.instance.insertExpense(expense);
-              AppLogger.log('MQTT: Sync - New Expense saved to DB');
-            }
-          } catch (e) {
-            AppLogger.log('MQTT Error: Failed to parse expense sync data - $e');
+              await DatabaseHelper.instance.insertLiveLocation(locationData);
+              AppLogger.log('MQTT Admin: Location sync for ${data['employee_id']}');
+              break;
+
+            case 'leave_request':
+              final leaveRequest = {
+                'employee_id': data['employee_id'],
+                'leave_type': data['leave_type'],
+                'from_date': data['from_date'],
+                'to_date': data['to_date'],
+                'reason': data['reason'],
+                'status': 'Pending'
+              };
+              await DatabaseHelper.instance.insertLeaveRequest(leaveRequest);
+              AppLogger.log('MQTT Admin: Leave sync from ${data['employee_id']}');
+              break;
+
+            case 'expense_claim':
+            case 'travel_expense':
+            case 'additional_expense':
+              final expenseData = {
+                'employee_id': data['employee_id'],
+                'date': data['timestamp'] ?? DateTime.now().toIso8601String(),
+                'expense_category': type.replaceAll('_', ' ').toUpperCase(),
+                'description': data['description'] ?? 'MQTT Sync',
+                'amount': data['amount'] ?? 0.0,
+              };
+              await DatabaseHelper.instance.insertEmployeeExpense(expenseData);
+              AppLogger.log('MQTT Admin: Expense sync from ${data['employee_id']}');
+              break;
           }
+        } catch (e) {
+          AppLogger.log('MQTT Router Error: $e');
         }
       }
     });
@@ -291,10 +318,7 @@ class MqttHandler {
 
   void _onConnected() {
     AppLogger.log('MQTT: Connected Successfully');
-    subscribe(attendanceTopic);
-    subscribe(leaveTopic);
-    subscribe(locationTopic);
-    subscribe(expensesTopic);
+    subscribe('employee/tracker/#');
     _setupMessageListener();
   }
 

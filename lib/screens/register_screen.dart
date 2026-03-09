@@ -13,10 +13,9 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
   
-  bool _isObscured = true;
+  String _selectedRole = 'Employee';
   bool _isLoading = false;
   double _opacity = 0.0;
 
@@ -31,8 +30,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
+    _idController.dispose();
     super.dispose();
   }
 
@@ -43,11 +41,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       final String name = _nameController.text.trim();
-      final String email = _emailController.text.trim();
-      final String password = _passwordController.text;
+      final String empId = _idController.text.trim();
 
-      // Step 1: Insert into SQLite
-      final bool success = await DatabaseHelper.instance.registerUser(name, email, password);
+      final bool success = await DatabaseHelper.instance.registerUserWithNameIdRole(name, empId, _selectedRole);
 
       if (success) {
         if (mounted) {
@@ -58,14 +54,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          // Step 2: Instant Route to Dashboard
           Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Email already exists. Please log in.'),
+              content: Text('Employee ID already exists. Please log in.'),
               backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
             ),
@@ -85,6 +80,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Container(
@@ -95,9 +92,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.green[900]!.withValues(alpha: 0.05),
+              Colors.green[900]!.withOpacity(0.05),
               Colors.white,
-              Colors.blue[50]!.withValues(alpha: 0.3),
+              Colors.blue[50]!.withOpacity(0.3),
             ],
           ),
         ),
@@ -112,13 +109,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 children: <Widget>[
                   const SizedBox(height: 20),
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.blue, size: 20),
+                    icon: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.primary, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const SizedBox(height: 30),
                   Text(
                     'Create Account',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
                   ),
                   const Text('Sign up to start tracking your work.', style: TextStyle(fontSize: 16, color: Colors.grey)),
                   const SizedBox(height: 40),
@@ -134,26 +131,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 20.0),
                         _buildTextField(
-                          controller: _emailController,
-                          hint: 'Email Address',
-                          icon: Icons.alternate_email,
-                          type: TextInputType.emailAddress,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Enter your email';
-                            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) return 'Invalid email';
-                            return null;
-                          },
+                          controller: _idController,
+                          hint: 'Employee ID (e.g., AMP-001)',
+                          icon: Icons.badge_outlined,
+                          type: TextInputType.text,
+                          validator: (v) => v!.isEmpty ? 'Enter your ID' : null,
                         ),
                         const SizedBox(height: 20.0),
-                        _buildTextField(
-                          controller: _passwordController,
-                          hint: 'Password',
-                          icon: Icons.lock_outline,
-                          isPassword: true,
-                          isObscured: _isObscured,
-                          onToggleVisibility: () => setState(() => _isObscured = !_isObscured),
-                          validator: (v) => v!.length < 6 ? 'Min 6 characters' : null,
-                        ),
+                        _buildRoleDropdown(),
                         const SizedBox(height: 40.0),
                         _buildRegisterButton(),
                       ],
@@ -172,33 +157,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required TextEditingController controller,
     required String hint,
     required IconData icon,
-    bool isPassword = false,
-    bool isObscured = false,
-    VoidCallback? onToggleVisibility,
     TextInputType? type,
     String? Function(String?)? validator
   }) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: TextFormField(
         controller: controller,
-        obscureText: isPassword ? isObscured : false,
         keyboardType: type,
         validator: validator,
         decoration: InputDecoration(
           hintText: hint,
-          prefixIcon: Icon(icon, color: Colors.blue[900], size: 22),
-          suffixIcon: isPassword ? IconButton(
-            icon: Icon(isObscured ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-            onPressed: onToggleVisibility,
-          ) : null,
+          prefixIcon: Icon(icon, color: theme.colorScheme.primary, size: 22),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         ),
+      ),
+    );
+  }
+
+  Widget _buildRoleDropdown() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _selectedRole,
+        decoration: InputDecoration(
+          icon: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
+          border: InputBorder.none,
+        ),
+        items: ['Employee', 'Admin'].map((role) {
+          return DropdownMenuItem(value: role, child: Text(role));
+        }).toList(),
+        onChanged: (v) {
+          if (v != null) setState(() => _selectedRole = v);
+        },
       ),
     );
   }

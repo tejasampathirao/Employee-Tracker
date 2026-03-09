@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 14, // Bumped version to 14
+      version: 19, // Bumped to 19 for live_locations support
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -31,6 +31,29 @@ class DatabaseHelper {
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Force creation of tables if they are missing
     await _createTables(db);
+    
+    if (oldVersion < 16) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN emp_id TEXT');
+      } catch (e) {
+        debugPrint("Note: emp_id column already exists or error: $e");
+      }
+    }
+
+    if (oldVersion < 15) {
+      final columns = [
+        'pan_no TEXT', 'aadhar_no TEXT', 'bank_acc_no TEXT', 
+        'ifsc_code TEXT', 'father_name TEXT', 'mother_name TEXT', 
+        'salary REAL', 'photo_path TEXT', 'role TEXT'
+      ];
+      for (var col in columns) {
+        try {
+          await db.execute('ALTER TABLE users ADD COLUMN $col');
+        } catch (e) {
+          debugPrint("Note: Column $col already exists or error: $e");
+        }
+      }
+    }
     
     if (oldVersion < 14) {
       try {
@@ -135,13 +158,57 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS leave_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id TEXT,
+        leave_type TEXT,
+        from_date TEXT,
+        to_date TEXT,
+        reason TEXT,
+        status TEXT DEFAULT 'Pending'
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS employee_expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id TEXT,
+        date TEXT,
+        expense_category TEXT,
+        description TEXT,
+        amount REAL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS live_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id TEXT,
+        latitude REAL,
+        longitude REAL,
+        speed REAL,
+        timestamp TEXT
+      )
+    ''');
+
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_id TEXT,
         name TEXT,
         details TEXT,
         phone TEXT,
         password TEXT,
-        email TEXT
+        email TEXT,
+        pan_no TEXT,
+        aadhar_no TEXT,
+        bank_acc_no TEXT,
+        ifsc_code TEXT,
+        father_name TEXT,
+        mother_name TEXT,
+        salary REAL,
+        photo_path TEXT,
+        role TEXT
       )
     ''');
 
@@ -257,6 +324,25 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getAllAttendance() async {
     final db = await instance.database;
     return await db.query('attendance', orderBy: 'id DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllEmployeeAttendance() async {
+    final db = await instance.database;
+    return await db.query(
+      'attendance', 
+      where: 'checkInTime IS NOT NULL',
+      orderBy: 'date DESC'
+    );
+  }
+
+  Future<Map<String, dynamic>?> authenticateUserByNameAndId(String name, String id) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'users',
+      where: 'name = ? AND emp_id = ?',
+      whereArgs: [name, id],
+    );
+    return result.isNotEmpty ? result.first : null;
   }
 
   // New Method to fetch previous calendar month's attendance
@@ -472,6 +558,39 @@ class DatabaseHelper {
     return await db.query('expenses', orderBy: 'id DESC');
   }
 
+  // --- Employee Expenses (Admin) ---
+  Future<int> insertEmployeeExpense(Map<String, dynamic> data) async {
+    final db = await instance.database;
+    return await db.insert('employee_expenses', data);
+  }
+
+  Future<List<Map<String, dynamic>>> getExpensesByEmployeeAndDateRange(
+    String empId, String startDate, String endDate) async {
+    final db = await instance.database;
+    return await db.query(
+      'employee_expenses',
+      where: 'employee_id = ? AND date >= ? AND date <= ?',
+      whereArgs: [empId, startDate, endDate],
+      orderBy: 'date DESC',
+    );
+  }
+
+  // --- Live Location Methods ---
+  Future<int> insertLiveLocation(Map<String, dynamic> data) async {
+    final db = await instance.database;
+    return await db.insert('live_locations', data);
+  }
+
+  Future<List<Map<String, dynamic>>> getAllLiveLocations() async {
+    final db = await instance.database;
+    return await db.query('live_locations', orderBy: 'timestamp DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllEmployeeExpenses() async {
+    final db = await instance.database;
+    return await db.query('employee_expenses', orderBy: 'date DESC');
+  }
+
   // --- Leaves Methods ---
   Future<int> insertLeave(Map<String, dynamic> leave) async {
     final db = await instance.database;
@@ -481,6 +600,47 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getAllLeaves() async {
     final db = await instance.database;
     return await db.query('leaves', orderBy: 'id DESC');
+  }
+
+  Future<int> getUsedPaidLeaves(String employeeId, int currentYear) async {
+    final db = await instance.database;
+    // We assume 'Casual Leave' is the paid leave type and it must be 'Approved'
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count 
+      FROM leave_requests 
+      WHERE employee_id = ? 
+      AND (leave_type = 'Casual Leave' OR leave_type = 'Paid Leave')
+      AND status = 'Approved'
+      AND from_date LIKE ?
+    ''', [employeeId, '$currentYear-%']);
+    
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  // --- Leave Requests (Admin) ---
+  Future<int> insertLeaveRequest(Map<String, dynamic> data) async {
+    final db = await instance.database;
+    return await db.insert('leave_requests', data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
+    final db = await instance.database;
+    return await db.query(
+      'leave_requests',
+      where: 'status = ?',
+      whereArgs: ['Pending'],
+      orderBy: 'id DESC',
+    );
+  }
+
+  Future<int> updateLeaveRequestStatus(int id, String status) async {
+    final db = await instance.database;
+    return await db.update(
+      'leave_requests',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // --- Report Methods ---
@@ -514,6 +674,30 @@ class DatabaseHelper {
   }
 
   // --- User Methods ---
+  Future<bool> registerUserWithNameIdRole(String name, String empId, String role) async {
+    final db = await instance.database;
+    
+    // Check if ID already exists
+    final existing = await db.query(
+      'users',
+      where: 'emp_id = ?',
+      whereArgs: [empId],
+    );
+
+    if (existing.isNotEmpty) {
+      return false; // ID already registered
+    }
+
+    // Insert new user
+    await db.insert('users', {
+      'name': name,
+      'emp_id': empId,
+      'role': role,
+      'details': role // Use role for details for backward compatibility
+    });
+    return true;
+  }
+
   Future<bool> isEmailRegistered(String email) async {
     final db = await instance.database;
     final result = await db.query(
@@ -585,12 +769,26 @@ class DatabaseHelper {
     return await db.update('users', {'password': newPassword}, where: 'id = ?', whereArgs: [1]);
   }
 
+  Future<List<Map<String, dynamic>>> getAllEmployees() async {
+    final db = await instance.database;
+    return await db.query('users', orderBy: 'name ASC');
+  }
+
+  Future<int> updateEmployee(Map<String, dynamic> data) async {
+    final db = await instance.database;
+    return await db.insert(
+      'users',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> clearAttendanceTable() async {
+    final db = await instance.database;
+    return await db.delete('attendance');
+  }
+
   Future<void> seedData() async {
-    try {
-      // Dummy data removed as requested
-    } catch (e) {
-      // Log the error but don't crash the app
-      debugPrint("Error seeding data: $e");
-    }
+    // Dummy data generation logic removed
   }
 }

@@ -7,6 +7,12 @@ import './screens/welcome_screen.dart';
 import './screens/login_screen.dart';
 import './screens/register_screen.dart';
 import './screens/live_data_monitor_screen.dart';
+import './screens/admin_dashboard.dart';
+import './screens/admin_attendance_screen.dart';
+import './screens/admin_leave_screen.dart';
+import './screens/admin_expenses_list_screen.dart';
+import './screens/employee_list_screen.dart';
+import './screens/employee_edit_screen.dart';
 import 'database/db_helper.dart';
 
 void main() async {
@@ -69,6 +75,12 @@ class MyApp extends StatelessWidget {
         LoginScreen.id: (context) => const LoginScreen(),
         RegisterScreen.id: (context) => const RegisterScreen(),
         LiveDataMonitorScreen.id: (context) => const LiveDataMonitorScreen(),
+        AdminDashboard.id: (context) => const AdminDashboard(),
+        AdminAttendanceScreen.id: (context) => const AdminAttendanceScreen(),
+        AdminLeaveScreen.id: (context) => const AdminLeaveScreen(),
+        AdminExpensesListScreen.id: (context) => const AdminExpensesListScreen(),
+        EmployeeListScreen.id: (context) => const EmployeeListScreen(),
+        EmployeeEditScreen.id: (context) => const EmployeeEditScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {
