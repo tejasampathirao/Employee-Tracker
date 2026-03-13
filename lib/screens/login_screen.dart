@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../screens/home.dart';
-import '../screens/forgot_password_screen.dart';
 import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
 
@@ -64,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
           if (role == 'Admin') {
             Navigator.pushNamedAndRemoveUntil(context, AdminDashboard.id, (route) => false);
-          } else {
+          } else if (role == 'Employee' || role == 'Trainee') {
             Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
           }
         }
@@ -72,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Invalid credentials.'),
+              content: Text('Invalid credentials or Account disabled. Please contact HR.'),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -104,9 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              theme.colorScheme.primary.withOpacity(0.05),
+              theme.colorScheme.primary.withValues(alpha: 0.05),
               Colors.white,
-              Colors.blue[50]!.withOpacity(0.3),
+              Colors.blue[50]!.withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -129,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           color: Colors.white,
                           shape: BoxShape.circle,
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
                           ],
                         ),
                         child: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.primary, size: 20),
@@ -148,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withOpacity(0.1),
+                            color: theme.colorScheme.primary.withValues(alpha: 0.1),
                             blurRadius: 20,
                             spreadRadius: 5,
                           )
@@ -262,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: theme.colorScheme.primary.withOpacity(0.05),
+            color: theme.colorScheme.primary.withValues(alpha: 0.05),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
@@ -303,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: theme.colorScheme.primary.withOpacity(0.3),
+            color: theme.colorScheme.primary.withValues(alpha: 0.3),
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),

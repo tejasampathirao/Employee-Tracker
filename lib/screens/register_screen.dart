@@ -92,9 +92,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.green[900]!.withOpacity(0.05),
+              Colors.green[900]!.withValues(alpha: 0.05),
               Colors.white,
-              Colors.blue[50]!.withOpacity(0.3),
+              Colors.blue[50]!.withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -165,7 +165,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: TextFormField(
         controller: controller,
@@ -188,15 +188,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: DropdownButtonFormField<String>(
-        value: _selectedRole,
+        initialValue: _selectedRole,
         decoration: InputDecoration(
           icon: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
           border: InputBorder.none,
         ),
-        items: ['Employee', 'Admin'].map((role) {
+        items: ['Employee', 'Admin', 'Trainee'].map((role) {
           return DropdownMenuItem(value: role, child: Text(role));
         }).toList(),
         onChanged: (v) {

@@ -12,6 +12,7 @@ class LocationService {
 
   StreamSubscription<Position>? _positionStreamSubscription;
   MqttHandler? _mqttClient;
+  String? _empId;
   Function()? _onExitedOffice;
   double? _refLat;
   double? _refLng;
@@ -63,6 +64,11 @@ class LocationService {
     _refLat = centerLat;
     _refLng = centerLng;
 
+    // Fetch employee ID once when tracking starts
+    final user = await DatabaseHelper.instance.getUser();
+    _empId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+
+    if (!context.mounted) return;
     final hasPermission = await handleLocationPermission(context);
     if (!hasPermission) return;
 
@@ -87,6 +93,29 @@ class LocationService {
     _onExitedOffice = null;
     _refLat = null;
     _refLng = null;
+  }
+
+  Future<bool> checkTravelEligibility() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      double distanceInMeters = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        kOfficeLatitude,
+        kOfficeLongitude,
+      );
+
+      // Rule: Distance > 10,000 meters (10 km) returns true
+      return distanceInMeters > 10000;
+    } catch (e) {
+      debugPrint("Error checking travel eligibility: $e");
+      return false;
+    }
   }
 
   void _checkGeofence(Position position) async {
@@ -125,9 +154,9 @@ class LocationService {
   void _sendLocationUpdate(Position position) {
     if (_mqttClient != null) {
       _mqttClient!.publishLocationUpdate(
-        position.latitude,
-        position.longitude,
-        position.speed,
+        lat: position.latitude,
+        lng: position.longitude,
+        employeeId: _empId ?? 'Unknown',
       );
     }
   }

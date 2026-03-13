@@ -284,7 +284,7 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
 
   Widget _buildRoleDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedRole,
+      initialValue: _selectedRole,
       decoration: InputDecoration(
         labelText: 'Role',
         prefixIcon: Icon(Icons.work_outline, color: Colors.blue[800]),

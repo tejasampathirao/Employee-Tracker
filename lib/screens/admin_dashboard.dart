@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import 'admin_attendance_screen.dart';
 import 'employee_list_screen.dart';
-import 'admin_leave_screen.dart';
+import 'admin_approvals_screen.dart';
+import 'admin_location_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
@@ -52,7 +53,7 @@ class AdminDashboard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 30,
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
                   child: Icon(Icons.admin_panel_settings, size: 35, color: theme.colorScheme.primary),
                 ),
                 const SizedBox(width: 16),
@@ -100,10 +101,10 @@ class AdminDashboard extends StatelessWidget {
                 ),
                 _buildServiceCard(
                   context,
-                  'Leave Approvals',
+                  'Admin Approvals',
                   Icons.mark_email_read_outlined,
                   Colors.purple,
-                  () => Navigator.pushNamed(context, AdminLeaveScreen.id),
+                  () => Navigator.pushNamed(context, AdminApprovalsScreen.id),
                 ),
                 _buildServiceCard(
                   context,
@@ -111,6 +112,13 @@ class AdminDashboard extends StatelessWidget {
                   Icons.payments_outlined,
                   Colors.green,
                   () => Navigator.pushNamed(context, AdminExpensesListScreen.id),
+                ),
+                _buildServiceCard(
+                  context,
+                  'Location Logs',
+                  Icons.location_on_outlined,
+                  Colors.red,
+                  () => Navigator.pushNamed(context, AdminLocationScreen.id),
                 ),
               ],
             ),
@@ -198,12 +206,12 @@ class AdminDashboard extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               blurRadius: 15,
               offset: const Offset(0, 8),
             ),
           ],
-          border: Border.all(color: color.withOpacity(0.1)),
+          border: Border.all(color: color.withValues(alpha: 0.1)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -211,7 +219,7 @@ class AdminDashboard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: color, size: 30),

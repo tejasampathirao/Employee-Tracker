@@ -24,6 +24,7 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
   bool _hasFood = false;
   bool _hasFuel = false;
   bool _hasTravel = false;
+  bool _hasMaterial = false;
 
   // Controllers
   final _foodDesc = TextEditingController();
@@ -32,6 +33,8 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
   final _fuelAmt = TextEditingController();
   final _travelDesc = TextEditingController();
   final _travelAmt = TextEditingController();
+  final _materialDesc = TextEditingController();
+  final _materialAmt = TextEditingController();
 
   bool _isLoading = false;
 
@@ -47,6 +50,7 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
           'expense_category': 'Food',
           'description': _foodDesc.text,
           'amount': double.tryParse(_foodAmt.text) ?? 0.0,
+          'status': 'Approved',
         });
       }
 
@@ -57,6 +61,7 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
           'expense_category': 'Fuel',
           'description': _fuelDesc.text,
           'amount': double.tryParse(_fuelAmt.text) ?? 0.0,
+          'status': 'Approved',
         });
       }
 
@@ -67,12 +72,24 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
           'expense_category': 'Travel',
           'description': _travelDesc.text,
           'amount': double.tryParse(_travelAmt.text) ?? 0.0,
+          'status': 'Approved',
+        });
+      }
+
+      if (_hasMaterial) {
+        await DatabaseHelper.instance.insertEmployeeExpense({
+          'employee_id': widget.employeeId,
+          'date': today,
+          'expense_category': 'Material',
+          'description': _materialDesc.text,
+          'amount': double.tryParse(_materialAmt.text) ?? 0.0,
+          'status': 'Approved',
         });
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expenses saved successfully!'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Data saved directly to records (Bypassed Approvals).'), backgroundColor: Colors.green),
         );
         Navigator.pop(context);
       }
@@ -134,7 +151,7 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
         }
 
         final directory = await getApplicationDocumentsDirectory();
-        final fileName = "Expenses_${widget.employeeId}_${startDate}_to_${endDate}.xlsx";
+        final fileName = "Expenses_${widget.employeeId}_${startDate}_to_$endDate.xlsx";
         final path = p.join(directory.path, fileName);
         final file = File(path);
         
@@ -187,6 +204,8 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
                 _buildExpenseSection('Fuel Expenses', _hasFuel, (val) => setState(() => _hasFuel = val!), _fuelDesc, _fuelAmt),
                 const SizedBox(height: 20),
                 _buildExpenseSection('Travel Expenses', _hasTravel, (val) => setState(() => _hasTravel = val!), _travelDesc, _travelAmt),
+                const SizedBox(height: 20),
+                _buildExpenseSection('Material Expenses', _hasMaterial, (val) => setState(() => _hasMaterial = val!), _materialDesc, _materialAmt),
                 const SizedBox(height: 40),
                 SizedBox(
                   width: double.infinity,

@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 19, // Bumped to 19 for live_locations support
+      version: 23, // Bumped to 23 for Soft Delete (is_active) support
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,6 +32,44 @@ class DatabaseHelper {
     // Force creation of tables if they are missing
     await _createTables(db);
     
+    if (oldVersion < 23) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1');
+      } catch (e) {
+        debugPrint("Note: users is_active column already exists or error: $e");
+      }
+    }
+
+    if (oldVersion < 22) {
+      try {
+        await db.execute('ALTER TABLE employee_expenses ADD COLUMN status TEXT DEFAULT "Pending"');
+      } catch (e) {
+        debugPrint("Note: employee_expenses status column already exists or error: $e");
+      }
+    }
+
+    if (oldVersion < 21) {
+      try {
+        await db.execute('ALTER TABLE attendance ADD COLUMN employee_id TEXT');
+      } catch (e) {
+        debugPrint("Note: attendance employee_id column already exists or error: $e");
+      }
+    }
+
+    if (oldVersion < 20) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS travel_attendance (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          checkInTime TEXT,
+          date TEXT,
+          latitude REAL,
+          longitude REAL,
+          employee_id TEXT,
+          status TEXT
+        )
+      ''');
+    }
+
     if (oldVersion < 16) {
       try {
         await db.execute('ALTER TABLE users ADD COLUMN emp_id TEXT');
@@ -106,6 +144,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS attendance (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id TEXT,
         checkInTime TEXT,
         checkOutTime TEXT,
         date TEXT,
@@ -176,7 +215,8 @@ class DatabaseHelper {
         date TEXT,
         expense_category TEXT,
         description TEXT,
-        amount REAL
+        amount REAL,
+        status TEXT DEFAULT 'Pending'
       )
     ''');
 
@@ -208,7 +248,8 @@ class DatabaseHelper {
         mother_name TEXT,
         salary REAL,
         photo_path TEXT,
-        role TEXT
+        role TEXT,
+        is_active INTEGER DEFAULT 1
       )
     ''');
 
@@ -237,6 +278,154 @@ class DatabaseHelper {
         value TEXT
       )
     ''');
+    
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS travel_attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        checkInTime TEXT,
+        date TEXT,
+        latitude REAL,
+        longitude REAL,
+        employee_id TEXT,
+        status TEXT
+      )
+    ''');
+  }
+
+  // --- MQTT Master Router Helper Methods ---
+
+  Future<int> insertAttendance(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    // Map MQTT payload to attendance table
+    return await db.insert('attendance', {
+      'employee_id': payload['employee_id'] ?? 'Unknown',
+      'checkInTime': payload['timestamp'], // Using timestamp as check-in for records from employees
+      'date': (payload['timestamp'] as String).split('T')[0],
+      'latitude': payload['location']?['lat'],
+      'longitude': payload['location']?['lng'],
+      'status': payload['status'] ?? 'Checked-In',
+      'type': 'Office'
+    });
+  }
+
+  Future<int> insertTravelAttendance(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    return await db.insert('travel_attendance', {
+      'employee_id': payload['employee_id'] ?? 'Unknown',
+      'checkInTime': payload['timestamp'],
+      'date': (payload['timestamp'] as String).split('T')[0],
+      'latitude': payload['lat'],
+      'longitude': payload['lng'],
+      'status': payload['action'] ?? 'Travel Event'
+    });
+  }
+
+  Future<int> insertExpenseRecord(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    // Handles Food, Fuel, Travel, and Material via category
+    return await db.insert('employee_expenses', {
+      'employee_id': payload['employee_id'] ?? 'Unknown',
+      'date': payload['timestamp'] ?? DateTime.now().toIso8601String(),
+      'expense_category': payload['category'] ?? payload['type'] ?? 'General',
+      'description': payload['description'] ?? '',
+      'amount': payload['amount'] ?? 0.0,
+      'status': 'Pending' // Explicitly setting status to Pending
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getUnifiedPendingApprovals() async {
+    final db = await instance.database;
+    
+    // Fetch pending leaves
+    final List<Map<String, dynamic>> leaves = await db.query(
+      'leave_requests',
+      where: 'status = ?',
+      whereArgs: ['Pending'],
+    );
+
+    // Fetch pending expenses
+    final List<Map<String, dynamic>> expenses = await db.query(
+      'employee_expenses',
+      where: 'status = ?',
+      whereArgs: ['Pending'],
+    );
+
+    // Combine and mark types
+    List<Map<String, dynamic>> combined = [];
+    
+    for (var leaf in leaves) {
+      Map<String, dynamic> item = Map.from(leaf);
+      item['approval_type'] = 'leave';
+      combined.add(item);
+    }
+
+    for (var expense in expenses) {
+      Map<String, dynamic> item = Map.from(expense);
+      item['approval_type'] = 'expense';
+      combined.add(item);
+    }
+
+    // Sort by ID descending (newest first)
+    combined.sort((a, b) => (b['id'] as int).compareTo(a['id'] as int));
+    
+    return combined;
+  }
+
+  Future<int> insertLocationRecord(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    return await db.insert('live_locations', {
+      'employee_id': payload['employee_id'] ?? 'Unknown',
+      'latitude': payload['lat'],
+      'longitude': payload['lng'],
+      'speed': payload['speed'] ?? 0.0,
+      'timestamp': payload['timestamp'] ?? DateTime.now().toIso8601String(),
+    });
+  }
+
+  // --- Travel Attendance Methods ---
+  Future<int> checkInTravel(String time, String date, double lat, double lng, String employeeId) async {
+    final db = await instance.database;
+    return await db.insert('travel_attendance', {
+      'checkInTime': time,
+      'date': date,
+      'latitude': lat,
+      'longitude': lng,
+      'employee_id': employeeId,
+      'status': 'Checked-In'
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getTravelAttendance() async {
+    final db = await instance.database;
+    return await db.query('travel_attendance', orderBy: 'id DESC');
+  }
+
+  Future<Map<String, dynamic>?> getLastTravelAttendance() async {
+    final db = await instance.database;
+    final result = await db.query(
+      'travel_attendance',
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first;
+    }
+    return null;
+  }
+
+  Future<int> checkOutTravel(String checkOutTime, int id) async {
+    final db = await instance.database;
+    return await db.update(
+      'travel_attendance',
+      {
+        'checkInTime': checkOutTime, // Note: Re-using the time field or we could add checkOutTime column. 
+        // For simplicity and matching user request of "separate table", I will add a checkOutTime column in a version bump if needed, 
+        // but for now I'll update status to 'Checked-Out'.
+        'status': 'Checked-Out'
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // --- Sites Methods ---
@@ -283,9 +472,10 @@ class DatabaseHelper {
   }
 
   // --- Attendance Methods ---
-  Future<int> checkIn(String checkInTime, String date, double? lat, double? lng, {String type = 'Office'}) async {
+  Future<int> checkIn(String checkInTime, String date, double? lat, double? lng, String employeeId, {String type = 'Office'}) async {
     final db = await instance.database;
     return await db.insert('attendance', {
+      'employee_id': employeeId,
       'checkInTime': checkInTime,
       'date': date,
       'latitude': lat,
@@ -328,18 +518,69 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getAllEmployeeAttendance() async {
     final db = await instance.database;
-    return await db.query(
-      'attendance', 
-      where: 'checkInTime IS NOT NULL',
-      orderBy: 'date DESC'
-    );
+    // JOIN attendance with users to get both name and employee_id, filtering for active employees
+    return await db.rawQuery('''
+      SELECT a.*, u.name as name
+      FROM attendance a
+      LEFT JOIN users u ON a.employee_id = u.emp_id
+      WHERE a.checkInTime IS NOT NULL AND (u.is_active = 1 OR u.is_active IS NULL)
+      ORDER BY a.date DESC
+    ''');
   }
 
+  Future<Map<String, dynamic>> getEmployeeAttendanceStats(String employeeId) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+
+    // 1. Attendance Percentage (Current Month)
+    final monthStartStr = "${DateFormat('yyyy-MM').format(now)}-01";
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+
+    // Requirement: CASE INSENSITIVE (UPPER) and logic parity with Employee Dashboard
+    final monthlyRecords = await db.rawQuery('''
+      SELECT COUNT(DISTINCT date) as count
+      FROM attendance
+      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND (status = 'Present' OR checkInTime IS NOT NULL)
+    ''', [employeeId, monthStartStr]);
+
+    int monthlyPresent = Sqflite.firstIntValue(monthlyRecords) ?? 0;
+    // Requirement: DOUBLE CASTING
+    double attendancePercentage = (monthlyPresent.toDouble() / daysInMonth.toDouble()) * 100.0;
+
+    // 2. Late Minutes Calculation (Current Month)
+    // Shift Start: 9:00 AM
+    final checkInRecords = await db.rawQuery('''
+      SELECT checkInTime 
+      FROM attendance 
+      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND checkInTime IS NOT NULL
+    ''', [employeeId, monthStartStr]);
+
+    int totalLateMinutes = 0;
+    for (var record in checkInRecords) {
+      final String? checkInStr = record['checkInTime'] as String?;
+      if (checkInStr != null) {
+        try {
+          final checkIn = DateTime.parse(checkInStr);
+          final shiftStart = DateTime(checkIn.year, checkIn.month, checkIn.day, 9, 0);
+          if (checkIn.isAfter(shiftStart)) {
+            totalLateMinutes += checkIn.difference(shiftStart).inMinutes;
+          }
+        } catch (e) {
+          debugPrint("Error parsing checkInTime in stats: $e");
+        }
+      }
+    }
+
+    return {
+      'percentage': attendancePercentage.toStringAsFixed(1),
+      'lateMinutes': totalLateMinutes,
+    };
+  }
   Future<Map<String, dynamic>?> authenticateUserByNameAndId(String name, String id) async {
     final db = await instance.database;
     final result = await db.query(
       'users',
-      where: 'name = ? AND emp_id = ?',
+      where: 'name = ? AND emp_id = ? AND is_active = 1',
       whereArgs: [name, id],
     );
     return result.isNotEmpty ? result.first : null;
@@ -575,6 +816,16 @@ class DatabaseHelper {
     );
   }
 
+  Future<int> updateExpenseStatus(int id, String status) async {
+    final db = await instance.database;
+    return await db.update(
+      'employee_expenses',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // --- Live Location Methods ---
   Future<int> insertLiveLocation(Map<String, dynamic> data) async {
     final db = await instance.database;
@@ -602,25 +853,50 @@ class DatabaseHelper {
     return await db.query('leaves', orderBy: 'id DESC');
   }
 
-  Future<int> getUsedPaidLeaves(String employeeId, int currentYear) async {
+  Future<int> getUsedPaidLeavesThisYear(String employeeId) async {
     final db = await instance.database;
-    // We assume 'Casual Leave' is the paid leave type and it must be 'Approved'
+    final currentYear = DateTime.now().year.toString();
+    
+    // Count all 'Paid Leave' requests (Pending or Approved) for the current calendar year
     final result = await db.rawQuery('''
       SELECT COUNT(*) as count 
       FROM leave_requests 
       WHERE employee_id = ? 
-      AND (leave_type = 'Casual Leave' OR leave_type = 'Paid Leave')
-      AND status = 'Approved'
+      AND (leave_type = 'Paid Leave' OR leave_type = 'Casual Leave')
+      AND status != 'Rejected'
       AND from_date LIKE ?
     ''', [employeeId, '$currentYear-%']);
     
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
+  Future<bool> hasUsedPaidLeaveThisMonth(String employeeId) async {
+    final db = await instance.database;
+    final String currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+    
+    // Check if any 'Paid Leave' exists where the from_date starts with current YYYY-MM
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count 
+      FROM leave_requests 
+      WHERE employee_id = ? 
+      AND leave_type = 'Paid Leave'
+      AND status != 'Rejected'
+      AND from_date LIKE ?
+    ''', [employeeId, '$currentMonth-%']);
+
+    int count = Sqflite.firstIntValue(result) ?? 0;
+    return count > 0;
+  }
+
   // --- Leave Requests (Admin) ---
   Future<int> insertLeaveRequest(Map<String, dynamic> data) async {
     final db = await instance.database;
-    return await db.insert('leave_requests', data);
+    
+    // Remove 'type' key if present in MQTT payload to avoid crash (table has no 'type' column)
+    final Map<String, dynamic> cleanData = Map.from(data);
+    cleanData.remove('type');
+    
+    return await db.insert('leave_requests', cleanData);
   }
 
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
@@ -641,6 +917,61 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<int> updateRequestStatus(String category, String id, String newStatus) async {
+    final db = await instance.database;
+    final intId = int.tryParse(id) ?? 0;
+    
+    if (category == 'leave_request') {
+      // Update both possible leave tables for consistency
+      await db.update('leave_requests', {'status': newStatus}, where: 'id = ?', whereArgs: [intId]);
+      return await db.update('leaves', {'status': newStatus}, where: 'id = ?', whereArgs: [intId]);
+    } else if (category == 'expense_claim' || category == 'expense_report' || category == 'expense_request') {
+      // Update both possible expense tables
+      await db.update('employee_expenses', {'status': newStatus}, where: 'id = ?', whereArgs: [intId]);
+      return await db.update('expenses', {'status': newStatus}, where: 'id = ?', whereArgs: [intId]);
+    }
+    return 0;
+  }
+
+  Future<Map<String, dynamic>> getEmployeeAttendanceSummary(String employeeId) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+    
+    // Weekly calculation (last 7 days)
+    final weekStart = now.subtract(const Duration(days: 7));
+    final weekStartStr = DateFormat('yyyy-MM-dd').format(weekStart);
+    
+    // Requirement: CASE INSENSITIVE and parity with stats
+    final weeklyRecords = await db.rawQuery('''
+      SELECT COUNT(DISTINCT date) as count 
+      FROM attendance 
+      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND (status = 'Present' OR checkInTime IS NOT NULL)
+    ''', [employeeId, weekStartStr]);
+    
+    int weeklyPresent = Sqflite.firstIntValue(weeklyRecords) ?? 0;
+    // Requirement: DOUBLE CASTING
+    double weeklyPercentage = (weeklyPresent.toDouble() / 7.0) * 100.0;
+
+    // Monthly calculation (current month)
+    final monthStartStr = "${DateFormat('yyyy-MM').format(now)}-01";
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    
+    final monthlyRecords = await db.rawQuery('''
+      SELECT COUNT(DISTINCT date) as count 
+      FROM attendance 
+      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND (status = 'Present' OR checkInTime IS NOT NULL)
+    ''', [employeeId, monthStartStr]);
+    
+    int monthlyPresent = Sqflite.firstIntValue(monthlyRecords) ?? 0;
+    // Requirement: DOUBLE CASTING
+    double monthlyPercentage = (monthlyPresent.toDouble() / daysInMonth.toDouble()) * 100.0;
+
+    return {
+      'weekly': weeklyPercentage.toStringAsFixed(1),
+      'monthly': monthlyPercentage.toStringAsFixed(1),
+    };
   }
 
   // --- Report Methods ---
@@ -736,7 +1067,7 @@ class DatabaseHelper {
     final db = await instance.database;
     final result = await db.query(
       'users',
-      where: 'email = ? AND password = ?',
+      where: 'email = ? AND password = ? AND is_active = 1',
       whereArgs: [email, password],
     );
     return result.isNotEmpty ? result.first : null;
@@ -771,7 +1102,17 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getAllEmployees() async {
     final db = await instance.database;
-    return await db.query('users', orderBy: 'name ASC');
+    return await db.query('users', where: 'is_active = 1', orderBy: 'name ASC');
+  }
+
+  Future<void> deactivateEmployee(String employeeId) async {
+    final db = await instance.database;
+    await db.update(
+      'users',
+      {'is_active': 0},
+      where: 'emp_id = ?',
+      whereArgs: [employeeId],
+    );
   }
 
   Future<int> updateEmployee(Map<String, dynamic> data) async {

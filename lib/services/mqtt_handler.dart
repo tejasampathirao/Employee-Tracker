@@ -20,6 +20,7 @@ class MqttHandler {
   final String leaveTopic = 'employee/tracker/hr/leaves';
   final String locationTopic = 'employee/tracker/location';
   final String expensesTopic = 'employee/tracker/expenses';
+  final String travelAttendanceTopic = 'employee/tracker/travel_attendance';
 
   MqttHandler._internal() {
     _initializeClient();
@@ -67,14 +68,16 @@ class MqttHandler {
   }
 
   /// Function 2: Publishes attendance check-in/out data
-  void publishAttendance(
-    String status,
-    double lat,
-    double lng,
-  ) {
+  void publishAttendance({
+    required String status,
+    required double lat,
+    required double lng,
+    required String employeeId,
+  }) {
     final Map<String, dynamic> payload = {
       "type": "attendance",
       "status": status,
+      "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
       "location": {"lat": lat, "lng": lng}
     };
@@ -85,14 +88,16 @@ class MqttHandler {
   }
 
   /// Function 3: Publishes live location updates
-  void publishLocationUpdate(
-    double lat,
-    double lng,
-    double speed,
-  ) {
+  void publishLocationUpdate({
+    required double lat,
+    required double lng,
+    required String employeeId,
+  }) {
     final Map<String, dynamic> payload = {
-      "type": "live_location",
-      "lat": lat, "lng": lng, "speed": speed,
+      "type": "location_update",
+      "lat": lat,
+      "lng": lng,
+      "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String()
     };
 
@@ -209,6 +214,45 @@ class MqttHandler {
     publish(attendanceTopic, jsonString); // Using attendance topic for report events
   }
 
+  /// Function 9: Publishes travel attendance data
+  void publishTravelAttendance({
+    required String action,
+    required double lat,
+    required double lng,
+    required String employeeId,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "travel_attendance",
+      "action": action,
+      "lat": lat,
+      "lng": lng,
+      "employee_id": employeeId,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Travel Attendance]: Sending Payload: $jsonString');
+    publish(travelAttendanceTopic, jsonString);
+  }
+
+  /// Function 10: Publishes a combined expense request
+  void publishExpenseReport({
+    required String employeeId,
+    required Map<String, dynamic> expenses,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "expense_request",
+      "employee_id": employeeId,
+      "status": "Pending",
+      "timestamp": DateTime.now().toIso8601String(),
+      ...expenses
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Expense Request]: Sending Payload: $jsonString');
+    publish(expensesTopic, jsonString, retain: true);
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};
@@ -222,7 +266,7 @@ class MqttHandler {
     try {
       AppLogger.log('MQTT: Connecting to $broker:$port...');
       await client.connect();
-      _setupMessageListener();
+      // Removed redundant _setupMessageListener() call here as it's triggered in _onConnected()
       return true;
     } catch (e) {
       AppLogger.log('MQTT: Connection failed - $e');
@@ -243,51 +287,73 @@ class MqttHandler {
         topicMessages[topic] = content;
 
         try {
-          final data = jsonDecode(content);
-          final String type = data['type'] ?? '';
+          final payload = jsonDecode(content);
+          final String type = payload['type'] ?? '';
+
+          AppLogger.log('MQTT Master Router: Received $type from $topic');
 
           switch (type) {
-            case 'live_location':
-              final locationData = {
-                'employee_id': data['employee_id'] ?? 'Unknown',
-                'latitude': data['lat'],
-                'longitude': data['lng'],
-                'speed': data['speed'],
-                'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
-              };
-              await DatabaseHelper.instance.insertLiveLocation(locationData);
-              AppLogger.log('MQTT Admin: Location sync for ${data['employee_id']}');
+            case 'status_update':
+              await DatabaseHelper.instance.updateRequestStatus(
+                payload['category'] ?? '',
+                payload['id']?.toString() ?? '',
+                payload['status'] ?? 'Pending'
+              );
+              AppLogger.log('MQTT Sync: Status update saved for ${payload['category']} ${payload['id']}');
               break;
 
             case 'leave_request':
-              final leaveRequest = {
-                'employee_id': data['employee_id'],
-                'leave_type': data['leave_type'],
-                'from_date': data['from_date'],
-                'to_date': data['to_date'],
-                'reason': data['reason'],
-                'status': 'Pending'
-              };
-              await DatabaseHelper.instance.insertLeaveRequest(leaveRequest);
-              AppLogger.log('MQTT Admin: Leave sync from ${data['employee_id']}');
+              await DatabaseHelper.instance.insertLeaveRequest(payload);
+              AppLogger.log('MQTT Sync: Leave request saved.');
+              break;
+
+            case 'attendance':
+              await DatabaseHelper.instance.insertAttendance(payload);
+              AppLogger.log('MQTT Sync: Office attendance saved.');
+              break;
+
+            case 'travel_attendance':
+              await DatabaseHelper.instance.insertTravelAttendance(payload);
+              AppLogger.log('MQTT Sync: Travel attendance saved.');
+              break;
+
+            case 'expense_report':
+            case 'expense_request':
+              // Handle combined report/request by splitting it into individual records for DatabaseHelper
+              final categories = ['food', 'fuel', 'travel', 'material'];
+              for (var cat in categories) {
+                if (payload['${cat}_amount'] != null && (payload['${cat}_amount'] as num) > 0) {
+                  await DatabaseHelper.instance.insertExpenseRecord({
+                    'type': cat[0].toUpperCase() + cat.substring(1),
+                    'employee_id': payload['employee_id'],
+                    'amount': payload['${cat}_amount'],
+                    'description': payload['${cat}_desc'] ?? '',
+                    'timestamp': payload['timestamp']
+                  });
+                }
+              }
+              AppLogger.log('MQTT Sync: Combined $type split and saved.');
               break;
 
             case 'expense_claim':
             case 'travel_expense':
             case 'additional_expense':
-              final expenseData = {
-                'employee_id': data['employee_id'],
-                'date': data['timestamp'] ?? DateTime.now().toIso8601String(),
-                'expense_category': type.replaceAll('_', ' ').toUpperCase(),
-                'description': data['description'] ?? 'MQTT Sync',
-                'amount': data['amount'] ?? 0.0,
-              };
-              await DatabaseHelper.instance.insertEmployeeExpense(expenseData);
-              AppLogger.log('MQTT Admin: Expense sync from ${data['employee_id']}');
+            case 'material_expense':
+              await DatabaseHelper.instance.insertExpenseRecord(payload);
+              AppLogger.log('MQTT Sync: $type saved.');
               break;
+
+            case 'location_update':
+            case 'live_location':
+              await DatabaseHelper.instance.insertLocationRecord(payload);
+              AppLogger.log('MQTT Sync: Location update saved.');
+              break;
+
+            default:
+              AppLogger.log('MQTT Router: Unknown payload type received: $type');
           }
         } catch (e) {
-          AppLogger.log('MQTT Router Error: $e');
+          AppLogger.log('MQTT Router Error: Failed to parse or save payload: $e');
         }
       }
     });
@@ -297,11 +363,11 @@ class MqttHandler {
     return topicMessages[topic];
   }
 
-  void publish(String topic, String message) {
+  void publish(String topic, String message, {bool retain = false}) {
     if (client.connectionStatus?.state == MqttConnectionState.connected) {
       final builder = MqttClientPayloadBuilder();
       builder.addString(message);
-      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!, retain: retain);
     } else {
       AppLogger.log('MQTT Error: Cannot publish, client not connected');
       connect(); // Attempt auto-reconnect
@@ -316,9 +382,18 @@ class MqttHandler {
 
   Stream<List<MqttReceivedMessage<MqttMessage>>>? get updates => client.updates;
 
-  void _onConnected() {
+  void _onConnected() async {
     AppLogger.log('MQTT: Connected Successfully');
     subscribe('employee/tracker/#');
+    
+    // Subscribe to employee specific status topic
+    final user = await DatabaseHelper.instance.getUser();
+    if (user != null && user['emp_id'] != null) {
+      final String empId = user['emp_id'];
+      subscribe('employee/tracker/status/$empId');
+      AppLogger.log('MQTT: Subscribed to employee status topic: employee/tracker/status/$empId');
+    }
+
     _setupMessageListener();
   }
 

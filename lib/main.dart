@@ -9,10 +9,14 @@ import './screens/register_screen.dart';
 import './screens/live_data_monitor_screen.dart';
 import './screens/admin_dashboard.dart';
 import './screens/admin_attendance_screen.dart';
-import './screens/admin_leave_screen.dart';
+import './screens/admin_approvals_screen.dart';
+import './screens/admin_location_screen.dart';
 import './screens/admin_expenses_list_screen.dart';
 import './screens/employee_list_screen.dart';
 import './screens/employee_edit_screen.dart';
+import './screens/travel_attendance_screen.dart';
+import './screens/additional_expenses_screen.dart';
+import './screens/employee_expense_submission_screen.dart';
 import 'database/db_helper.dart';
 
 void main() async {
@@ -77,10 +81,14 @@ class MyApp extends StatelessWidget {
         LiveDataMonitorScreen.id: (context) => const LiveDataMonitorScreen(),
         AdminDashboard.id: (context) => const AdminDashboard(),
         AdminAttendanceScreen.id: (context) => const AdminAttendanceScreen(),
-        AdminLeaveScreen.id: (context) => const AdminLeaveScreen(),
+        AdminApprovalsScreen.id: (context) => const AdminApprovalsScreen(),
+        AdminLocationScreen.id: (context) => const AdminLocationScreen(),
         AdminExpensesListScreen.id: (context) => const AdminExpensesListScreen(),
         EmployeeListScreen.id: (context) => const EmployeeListScreen(),
         EmployeeEditScreen.id: (context) => const EmployeeEditScreen(),
+        TravelAttendanceScreen.id: (context) => const TravelAttendanceScreen(),
+        AdditionalExpensesScreen.id: (context) => const AdditionalExpensesScreen(),
+        EmployeeExpenseSubmissionScreen.id: (context) => const EmployeeExpenseSubmissionScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {

@@ -74,6 +74,26 @@ class ExcelExportHelper {
       ]);
     }
 
+    // 4. Attendance Summary Sheet
+    Sheet summarySheet = excel['Attendance Summary'];
+    final employees = await DatabaseHelper.instance.getAllEmployees();
+    summarySheet.appendRow([
+      TextCellValue('Employee ID'), 
+      TextCellValue('Name'), 
+      TextCellValue('Weekly %'), 
+      TextCellValue('Monthly %')
+    ]);
+    for (var emp in employees) {
+      final empId = emp['emp_id'] ?? 'N/A';
+      final summary = await DatabaseHelper.instance.getEmployeeAttendanceSummary(empId);
+      summarySheet.appendRow([
+        TextCellValue(empId),
+        TextCellValue(emp['name'] ?? 'Unknown'),
+        TextCellValue("${summary['weekly']}%"),
+        TextCellValue("${summary['monthly']}%"),
+      ]);
+    }
+
     // Save the file
     final directory = await getApplicationDocumentsDirectory();
     final path = p.join(directory.path, "Admin_HR_Report.xlsx");

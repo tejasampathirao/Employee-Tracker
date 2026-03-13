@@ -46,7 +46,7 @@ class _AdminExpensesListScreenState extends State<AdminExpensesListScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
                     child: Text(
                       name[0].toUpperCase(),
                       style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),

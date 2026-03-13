@@ -22,6 +22,8 @@ import 'overtime_calculator_card.dart';
 import '../constants.dart';
 import '../utils/app_logger.dart';
 import '../screens/debug_logs_screen.dart';
+import '../screens/travel_attendance_screen.dart';
+import '../screens/employee_expense_submission_screen.dart';
 
 Widget getDrawerWidget(
   int index,
@@ -298,6 +300,8 @@ Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updat
     {'title': 'Work', 'icon': Icons.work, 'color': Colors.indigo, 'desc': 'Log daily work and meetings'},
     {'title': 'Time Tracker', 'icon': Icons.timer, 'color': Colors.orange, 'desc': 'Log your work hours'},
     {'title': 'Travel Expenses', 'icon': Icons.directions_car, 'color': Colors.teal, 'desc': 'Onsite and Office logs'},
+    {'title': 'Travel Attendance', 'icon': Icons.transfer_within_a_station, 'color': Colors.deepOrange, 'desc': '10km geofenced attendance'},
+    {'title': 'Daily Expenses', 'icon': Icons.receipt_long, 'color': Colors.blueAccent, 'desc': 'Submit food, fuel, etc.'},
     {'title': 'Additional Expenses', 'icon': Icons.done_all, 'color': Colors.purple, 'desc': 'Manage your requests'},
   ];
 
@@ -1399,6 +1403,12 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
         case 'Travel Expenses':
           _showTravelExpenseService(context, mqttClient);
           break;
+        case 'Travel Attendance':
+          Navigator.pushNamed(context, TravelAttendanceScreen.id);
+          break;
+        case 'Daily Expenses':
+          Navigator.pushNamed(context, EmployeeExpenseSubmissionScreen.id);
+          break;
         case 'Additional Expenses':
           _showExpenseApprovalsService(context, mqttClient);
           break;
@@ -1900,7 +1910,7 @@ void _showGeofenceDialog(BuildContext context, Function onUpdate) async {
 
 // --- LEAVE TRACKER (Used by Services) ---
 Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function updateState) {
-  return Padding(
+  return SingleChildScrollView(
     padding: const EdgeInsets.all(16.0),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1910,7 +1920,10 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
           children: [
             const Text('Leave Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ElevatedButton.icon(
-              onPressed: () => _showApplyLeaveForm(context, mqttClient),
+              onPressed: () async {
+                await _showApplyLeaveForm(context, mqttClient);
+                updateState(); // Refresh UI after returning from form
+              },
               icon: const Icon(Icons.add),
               label: const Text('Apply'),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
@@ -1919,7 +1932,7 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
         ),
         const SizedBox(height: 20),
         
-        // Paid Leave Balance Tracker
+        // Paid Leave Balance Tracker (Large Card Only)
         FutureBuilder<Map<String, dynamic>?>(
           future: DatabaseHelper.instance.getUser(),
           builder: (context, userSnapshot) {
@@ -1927,7 +1940,7 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
             final year = DateTime.now().year;
             
             return FutureBuilder<int>(
-              future: DatabaseHelper.instance.getUsedPaidLeaves(empId, year),
+              future: DatabaseHelper.instance.getUsedPaidLeavesThisYear(empId),
               builder: (context, leaveSnapshot) {
                 final used = leaveSnapshot.data ?? 0;
                 final balance = 12 - used;
@@ -1938,7 +1951,7 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
                   decoration: BoxDecoration(
                     gradient: LinearGradient(colors: [Colors.blue[700]!, Colors.blue[400]!]),
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+                    boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 5))],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1954,7 +1967,7 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
                       ),
                       Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
                         child: const Icon(Icons.beach_access, color: Colors.white, size: 30),
                       ),
                     ],
@@ -1965,63 +1978,61 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
           },
         ),
         
-        const SizedBox(height: 30),
-        Row(
-          children: [
-            Expanded(child: _buildLeaveBalanceCard('Casual', 12, 0, Colors.blue)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildLeaveBalanceCard('Sick', 12, 0, Colors.red)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _buildLeaveBalanceCard('Earned', 15, 2, Colors.green)),
-            const SizedBox(width: 12),
-            const Expanded(child: SizedBox()),
-          ],
-        ),
         const SizedBox(height: 24),
         const Text('Pending Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        Expanded(child: _buildEmptyState('No pending leave requests')),
+        _buildPendingLeavesList(),
       ],
     ),
   );
 }
 
-Widget _buildLeaveBalanceCard(String type, int available, int booked, Color color) {
-  return Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.05),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: color.withValues(alpha: 0.1)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(type, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('$available', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const Text('Available', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
-      ],
-    ),
+Widget _buildPendingLeavesList() {
+  return FutureBuilder<List<Map<String, dynamic>>>(
+    future: DatabaseHelper.instance.getPendingLeaveRequests(),
+    builder: (context, snapshot) {
+      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        return _buildEmptyState('No pending leave requests');
+      }
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: snapshot.data!.length,
+        itemBuilder: (context, index) {
+          final item = snapshot.data![index];
+          return Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+            child: ListTile(
+              leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.calendar_today, color: Colors.blue, size: 20)),
+              title: Text(item['leave_type'] ?? 'Leave', style: const TextStyle(fontWeight: FontWeight.w500)),
+              subtitle: Text('${item['from_date']} to ${item['to_date']}'),
+              trailing: const Text('Pending', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+            ),
+          );
+        },
+      );
+    },
   );
 }
 
-void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
+Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) async {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController reasonController = TextEditingController();
-  String selectedLeaveType = 'Casual Leave';
   
-  showModalBottomSheet(
+  // Fetch user and lock status before showing bottom sheet
+  final user = await DatabaseHelper.instance.getUser();
+  final String empId = user?['emp_id'] ?? 'AMP-001';
+  final bool isPaidLeaveLocked = await DatabaseHelper.instance.hasUsedPaidLeaveThisMonth(empId);
+  
+  // Default to Sick Leave if Paid is locked
+  String selectedLeaveType = isPaidLeaveLocked ? 'Sick Leave' : 'Paid Leave';
+  
+  if (!context.mounted) return;
+
+  await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
@@ -2048,11 +2059,21 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
                 DropdownButtonFormField<String>(
                   initialValue: selectedLeaveType,
                   decoration: const InputDecoration(labelText: 'Leave type', border: OutlineInputBorder()),
-                  items: ['Casual Leave', 'Earned Leave', 'Sick Leave']
-                      .map((label) => DropdownMenuItem(value: label, child: Text(label)))
+                  items: ['Paid Leave', 'Earned Leave', 'Sick Leave']
+                      .map((label) {
+                        bool isLocked = label == 'Paid Leave' && isPaidLeaveLocked;
+                        return DropdownMenuItem(
+                          value: label,
+                          enabled: !isLocked,
+                          child: Text(
+                            label + (isLocked ? " (Used this month)" : ""),
+                            style: TextStyle(color: isLocked ? Colors.grey : Colors.black),
+                          ),
+                        );
+                      })
                       .toList(),
                   onChanged: (value) {
-                    if (value != null) selectedLeaveType = value;
+                    if (value != null) setModalState(() => selectedLeaveType = value);
                   },
                 ),
                 const SizedBox(height: 16),
@@ -2110,6 +2131,26 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
                         return;
                       }
 
+                      // Fetch user info for MQTT payload and database check
+                      final user = await DatabaseHelper.instance.getUser();
+                      final String employeeId = user?['emp_id'] ?? 'AMP-001';
+
+                      // Gatekeeper Logic: One Paid Leave per Month
+                      if (selectedLeaveType == 'Paid Leave') {
+                        bool alreadyUsed = await DatabaseHelper.instance.hasUsedPaidLeaveThisMonth(employeeId);
+                        if (alreadyUsed) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Policy Error: You have already used your 1 Paid Leave for this month.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                      }
+
                       final Map<String, dynamic> leaveData = {
                         'leaveType': selectedLeaveType,
                         'fromDate': fromDateController.text,
@@ -2125,9 +2166,7 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
                       leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
 
-                      // Fetch user info for MQTT payload
-                      final user = await DatabaseHelper.instance.getUser();
-                      final String employeeId = user?['name'] ?? 'Teja';
+                      final String employeeName = user?['name'] ?? 'Teja';
 
                       // Publish using standardized helper function
                       mqttClient.publishLeaveRequest(
@@ -2135,7 +2174,7 @@ void _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) {
                         fromDateController.text,
                         toDateController.text,
                         reasonController.text,
-                        employeeId,
+                        employeeName,
                       );
 
                       if (context.mounted) {

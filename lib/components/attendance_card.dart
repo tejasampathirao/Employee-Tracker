@@ -226,19 +226,24 @@ class _AttendanceCardState extends State<AttendanceCard> {
         }
 
         // Proceed with check-in only if within 100m
+        final user = await DatabaseHelper.instance.getUser();
+        final empId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+
         final id = await DatabaseHelper.instance.checkIn(
           timeString, 
           dateString, 
           position.latitude, 
           position.longitude,
+          empId,
           type: 'Office'
         );
         
         // Publish to MQTT using standardized function
         mqttService.publishAttendance(
-          "Checked In",
-          position.latitude,
-          position.longitude,
+          status: "Checked In",
+          lat: position.latitude,
+          lng: position.longitude,
+          employeeId: empId,
         );
 
         if (mounted) {
@@ -275,10 +280,14 @@ class _AttendanceCardState extends State<AttendanceCard> {
           );
 
           // Publish to MQTT using standardized function
+          final user = await DatabaseHelper.instance.getUser();
+          final empId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+          
           mqttService.publishAttendance(
-            finalStatus,
-            position.latitude,
-            position.longitude,
+            status: finalStatus,
+            lat: position.latitude,
+            lng: position.longitude,
+            employeeId: empId,
           );
 
           // Requirement 3: Cancel 5:30 PM reminder on Check-Out
