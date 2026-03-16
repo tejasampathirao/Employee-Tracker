@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/home.dart';
 import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
@@ -51,6 +52,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user != null) {
         final String role = user['role'] ?? 'Employee';
+        final String empId = user['emp_id'] ?? idInput;
+
+        // Persist session locally
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('employee_id', empId);
+        await prefs.setString('employee_name', user['name'] ?? nameInput);
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

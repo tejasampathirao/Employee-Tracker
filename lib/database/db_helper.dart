@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 23, // Bumped to 23 for Soft Delete (is_active) support
+      version: 25, // Bumped to 25 to add employee_id to users table
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,6 +32,28 @@ class DatabaseHelper {
     // Force creation of tables if they are missing
     await _createTables(db);
     
+    if (oldVersion < 25) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN employee_id TEXT');
+      } catch (e) {
+        debugPrint("Note: users employee_id column already exists or error: $e");
+      }
+    }
+
+    if (oldVersion < 24) {
+      final tables = ['employee_expenses', 'leave_requests'];
+      for (var table in tables) {
+        try {
+          await db.execute('ALTER TABLE $table ADD COLUMN request_id TEXT UNIQUE');
+          await db.execute('ALTER TABLE $table ADD COLUMN latitude REAL');
+          await db.execute('ALTER TABLE $table ADD COLUMN longitude REAL');
+          await db.execute('ALTER TABLE $table ADD COLUMN distance REAL');
+        } catch (e) {
+          debugPrint("Note: Columns for $table already exist or error: $e");
+        }
+      }
+    }
+
     if (oldVersion < 23) {
       try {
         await db.execute('ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1');
@@ -199,24 +221,32 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS leave_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT UNIQUE,
         employee_id TEXT,
         leave_type TEXT,
         from_date TEXT,
         to_date TEXT,
         reason TEXT,
-        status TEXT DEFAULT 'Pending'
+        status TEXT DEFAULT 'Pending',
+        latitude REAL,
+        longitude REAL,
+        distance REAL
       )
     ''');
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS employee_expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT UNIQUE,
         employee_id TEXT,
         date TEXT,
         expense_category TEXT,
         description TEXT,
         amount REAL,
-        status TEXT DEFAULT 'Pending'
+        status TEXT DEFAULT 'Pending',
+        latitude REAL,
+        longitude REAL,
+        distance REAL
       )
     ''');
 
@@ -235,6 +265,7 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         emp_id TEXT,
+        employee_id TEXT,
         name TEXT,
         details TEXT,
         phone TEXT,
@@ -324,13 +355,17 @@ class DatabaseHelper {
     final db = await instance.database;
     // Handles Food, Fuel, Travel, and Material via category
     return await db.insert('employee_expenses', {
+      'request_id': payload['request_id'],
       'employee_id': payload['employee_id'] ?? 'Unknown',
       'date': payload['timestamp'] ?? DateTime.now().toIso8601String(),
       'expense_category': payload['category'] ?? payload['type'] ?? 'General',
       'description': payload['description'] ?? '',
       'amount': payload['amount'] ?? 0.0,
-      'status': 'Pending' // Explicitly setting status to Pending
-    });
+      'status': payload['status'] ?? 'Pending',
+      'latitude': payload['latitude'] ?? payload['lat'],
+      'longitude': payload['longitude'] ?? payload['lng'],
+      'distance': payload['distance'] ?? payload['distance_km'],
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<List<Map<String, dynamic>>> getUnifiedPendingApprovals() async {
@@ -518,13 +553,11 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getAllEmployeeAttendance() async {
     final db = await instance.database;
-    // JOIN attendance with users to get both name and employee_id, filtering for active employees
     return await db.rawQuery('''
-      SELECT a.*, u.name as name
-      FROM attendance a
-      LEFT JOIN users u ON a.employee_id = u.emp_id
-      WHERE a.checkInTime IS NOT NULL AND (u.is_active = 1 OR u.is_active IS NULL)
-      ORDER BY a.date DESC
+      SELECT a.*, u.name as name 
+      FROM attendance a 
+      LEFT JOIN users u ON UPPER(a.employee_id) = UPPER(u.employee_id) 
+      ORDER BY a.date DESC, a.id DESC
     ''');
   }
 
@@ -584,6 +617,29 @@ class DatabaseHelper {
       whereArgs: [name, id],
     );
     return result.isNotEmpty ? result.first : null;
+  }
+
+  // New Method to fetch current calendar month's attendance for a specific employee
+  Future<List<Map<String, dynamic>>> getCurrentMonthAttendance(String employeeId) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+
+    // Logic: DateTime(year, month, 1) gets first day of current month
+    // Logic: DateTime(year, month + 1, 0) gets last day of current month
+    final firstDayCurrentMonth = DateTime(now.year, now.month, 1);
+    final lastDayCurrentMonth = DateTime(now.year, now.month + 1, 0);
+
+    final startStr = DateFormat('yyyy-MM-dd').format(firstDayCurrentMonth);
+    final endStr = DateFormat('yyyy-MM-dd').format(lastDayCurrentMonth);
+
+    debugPrint("Fetching Current Month Attendance for $employeeId between $startStr and $endStr");
+
+    return await db.query(
+      'attendance',
+      where: 'UPPER(employee_id) = UPPER(?) AND date >= ? AND date <= ?',
+      whereArgs: [employeeId, startStr, endStr],
+      orderBy: 'date DESC',
+    );
   }
 
   // New Method to fetch previous calendar month's attendance
@@ -896,7 +952,7 @@ class DatabaseHelper {
     final Map<String, dynamic> cleanData = Map.from(data);
     cleanData.remove('type');
     
-    return await db.insert('leave_requests', cleanData);
+    return await db.insert('leave_requests', cleanData, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
@@ -1019,12 +1075,14 @@ class DatabaseHelper {
       return false; // ID already registered
     }
 
-    // Insert new user
+    // Insert new user with role and employee_id
     await db.insert('users', {
       'name': name,
       'emp_id': empId,
+      'employee_id': empId, // Set both for compatibility
       'role': role,
-      'details': role // Use role for details for backward compatibility
+      'details': role, // Use role for details for backward compatibility
+      'is_active': 1,
     });
     return true;
   }

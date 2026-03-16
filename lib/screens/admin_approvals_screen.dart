@@ -159,6 +159,53 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        // Display common data for both Leaves and Expenses
+                        if (request['date'] != null || request['timestamp'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.calendar_today, size: 16, color: Colors.blue),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "📅 Date: ${request['date'] ?? request['timestamp']?.split('T')[0]}",
+                                  style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        
+                        if (request['latitude'] != null && request['longitude'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on, size: 16, color: Colors.red),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "📍 Location: Lat: ${request['latitude']?.toStringAsFixed(4)}, Lng: ${request['longitude']?.toStringAsFixed(4)}",
+                                  style: TextStyle(color: Colors.grey[800]),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        if (request['distance'] != null && (request['distance'] as num) > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.directions_car, size: 16, color: Colors.green),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "🚗 Distance: ${request['distance']?.toStringAsFixed(2)} km",
+                                  style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        const Divider(),
                         if (isLeave) ...[
                           Row(
                             children: [

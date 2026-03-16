@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/home.dart';
+import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -46,6 +48,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final bool success = await DatabaseHelper.instance.registerUserWithNameIdRole(name, empId, _selectedRole);
 
       if (success) {
+        // Persist session locally
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('employee_id', empId);
+        await prefs.setString('employee_name', name);
+        await prefs.setString('employee_role', _selectedRole); // Save role for session logic
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -54,7 +62,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+          
+          // Route based on role
+          if (_selectedRole == 'Admin') {
+            Navigator.pushNamedAndRemoveUntil(context, AdminDashboard.id, (route) => false);
+          } else {
+            Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+          }
         }
       } else {
         if (mounted) {
@@ -191,7 +205,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: DropdownButtonFormField<String>(
-        initialValue: _selectedRole,
+        value: _selectedRole,
         decoration: InputDecoration(
           icon: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
           border: InputBorder.none,

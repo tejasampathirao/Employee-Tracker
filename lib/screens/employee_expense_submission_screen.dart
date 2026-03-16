@@ -123,7 +123,7 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  disabledBackgroundColor: theme.colorScheme.primary.withOpacity(0.6),
+                  disabledBackgroundColor: theme.colorScheme.primary.withValues(alpha: 0.6),
                 ),
                 child: _isSubmitting 
                   ? const CircularProgressIndicator(color: Colors.white)

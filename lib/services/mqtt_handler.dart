@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
+import 'package:uuid/uuid.dart';
 import '../database/db_helper.dart';
 import '../utils/app_logger.dart';
 
@@ -14,6 +15,7 @@ class MqttHandler {
   late MqttServerClient client;
   final String broker = '13.203.2.58';
   final int port = 1883;
+  final _uuid = const Uuid();
   
   // Standardized Topics
   final String attendanceTopic = 'employee/tracker';
@@ -55,6 +57,7 @@ class MqttHandler {
   ) {
     final Map<String, dynamic> payload = {
       "type": "leave_request",
+      "request_id": _uuid.v4(),
       "leave_type": leaveType,
       "from_date": fromDate,
       "to_date": toDate,
@@ -76,6 +79,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "attendance",
+      "request_id": _uuid.v4(),
       "status": status,
       "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
@@ -95,6 +99,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "location_update",
+      "request_id": _uuid.v4(),
       "lat": lat,
       "lng": lng,
       "employee_id": employeeId,
@@ -110,6 +115,7 @@ class MqttHandler {
   void publishExpense(String category, String description, double amount, String employeeId) {
     final Map<String, dynamic> payload = {
       "type": "expense_claim",
+      "request_id": _uuid.v4(),
       "category": category,
       "description": description,
       "amount": amount,
@@ -136,6 +142,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "travel_expense",
+      "request_id": _uuid.v4(),
       "amount": amount,
       "description": description,
       "visit_type": visitType,
@@ -162,6 +169,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "additional_expense",
+      "request_id": _uuid.v4(),
       "description": description,
       "amount": amount,
       "employee_id": employeeId,
@@ -182,6 +190,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "daily_work_log",
+      "request_id": _uuid.v4(),
       "description": description,
       "work_type": workType,
       "employee_id": employeeId,
@@ -202,6 +211,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "work_report",
+      "request_id": _uuid.v4(),
       "employee_id": employeeId,
       "from_date": fromDate,
       "to_date": toDate,
@@ -223,6 +233,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "travel_attendance",
+      "request_id": _uuid.v4(),
       "action": action,
       "lat": lat,
       "lng": lng,
@@ -242,6 +253,7 @@ class MqttHandler {
   }) {
     final Map<String, dynamic> payload = {
       "type": "expense_request",
+      "request_id": _uuid.v4(),
       "employee_id": employeeId,
       "status": "Pending",
       "timestamp": DateTime.now().toIso8601String(),
@@ -289,6 +301,7 @@ class MqttHandler {
         try {
           final payload = jsonDecode(content);
           final String type = payload['type'] ?? '';
+          final String requestId = payload['request_id'] ?? '';
 
           AppLogger.log('MQTT Master Router: Received $type from $topic');
 
@@ -324,11 +337,15 @@ class MqttHandler {
               for (var cat in categories) {
                 if (payload['${cat}_amount'] != null && (payload['${cat}_amount'] as num) > 0) {
                   await DatabaseHelper.instance.insertExpenseRecord({
+                    'request_id': requestId.isNotEmpty ? '${requestId}_$cat' : null,
                     'type': cat[0].toUpperCase() + cat.substring(1),
                     'employee_id': payload['employee_id'],
                     'amount': payload['${cat}_amount'],
                     'description': payload['${cat}_desc'] ?? '',
-                    'timestamp': payload['timestamp']
+                    'timestamp': payload['timestamp'],
+                    'latitude': payload['latitude'] ?? payload['lat'],
+                    'longitude': payload['longitude'] ?? payload['lng'],
+                    'distance': payload['distance'] ?? payload['distance_km'],
                   });
                 }
               }
@@ -363,7 +380,7 @@ class MqttHandler {
     return topicMessages[topic];
   }
 
-  void publish(String topic, String message, {bool retain = false}) {
+  void publish(String topic, String message, {bool retain = true}) {
     if (client.connectionStatus?.state == MqttConnectionState.connected) {
       final builder = MqttClientPayloadBuilder();
       builder.addString(message);

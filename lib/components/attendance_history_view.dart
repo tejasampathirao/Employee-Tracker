@@ -13,13 +13,18 @@ class AttendanceHistoryView extends StatefulWidget {
 }
 
 class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
-  late Future<List<Map<String, dynamic>>> _lastMonthFuture;
+  late Future<List<Map<String, dynamic>>> _thisMonthFuture;
 
   @override
   void initState() {
     super.initState();
-    // Store the future in initState to prevent re-fetching on every rebuild
-    _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
+    _thisMonthFuture = _fetchThisMonthHistory();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchThisMonthHistory() async {
+    final user = await DatabaseHelper.instance.getUser();
+    final String empId = user?['emp_id'] ?? '';
+    return DatabaseHelper.instance.getCurrentMonthAttendance(empId);
   }
 
   @override
@@ -29,7 +34,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
         _buildHeader(),
         Expanded(
           child: FutureBuilder<List<Map<String, dynamic>>>(
-            future: _lastMonthFuture,
+            future: _thisMonthFuture,
             builder: (context, snapshot) {
               // 1. Loading State
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -47,7 +52,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                       Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
                       TextButton(
                         onPressed: () => setState(() {
-                          _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
+                          _thisMonthFuture = _fetchThisMonthHistory();
                         }),
                         child: const Text('Retry'),
                       )
@@ -64,7 +69,7 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                     children: [
                       Icon(Icons.calendar_today_outlined, color: Colors.grey, size: 48),
                       SizedBox(height: 16),
-                      Text('No records found for last month.', style: TextStyle(color: Colors.grey)),
+                      Text('No records found for this month.', style: TextStyle(color: Colors.grey)),
                     ],
                   ),
                 );
@@ -108,14 +113,14 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               Text(
-                'Records for last month',
+                'Records for this month',
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
             ],
           ),
           IconButton(
             onPressed: () => setState(() {
-              _lastMonthFuture = DatabaseHelper.instance.getLastMonthAttendance();
+              _thisMonthFuture = _fetchThisMonthHistory();
             }),
             icon: const Icon(Icons.refresh, color: Colors.blue),
           ),

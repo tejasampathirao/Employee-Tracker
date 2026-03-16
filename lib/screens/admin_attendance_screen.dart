@@ -89,7 +89,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
           children: [
             const Icon(Icons.analytics_outlined, color: Colors.blue),
             const SizedBox(width: 10),
-            Expanded(child: Text('Stats: $employeeName')),
+            Expanded(child: Text('Stats: $employeeName ($employeeId)')),
           ],
         ),
         content: FutureBuilder<Map<String, dynamic>>(
@@ -218,7 +218,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
             final checkIn = record['checkInTime'] as String?;
             final checkOut = record['checkOutTime'] as String?;
             final date = record['date'] as String? ?? "N/A";
-            final employeeId = record['employee_id'] ?? 'N/A';
+            final employeeId = record['employee_id'] ?? 'Unknown';
             final employeeName = record['name'] ?? 'Unknown Employee';
             final otSlot = calculateOTSlot(checkIn, checkOut);
             final lateStatus = calculateLateStatus(checkIn);
@@ -243,16 +243,22 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.badge_outlined, size: 20, color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Text(
-                                "$employeeName ($employeeId)",
-                                style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary, fontSize: 16),
-                              ),
-                            ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Icon(Icons.badge_outlined, size: 20, color: Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "$employeeName ($employeeId)",
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary, fontSize: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1))),

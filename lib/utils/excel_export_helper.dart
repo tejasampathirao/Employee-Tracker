@@ -104,11 +104,13 @@ class ExcelExportHelper {
       await file.writeAsBytes(bytes);
     }
 
-    // Trigger System Share Sheet
-    await Share.shareXFiles(
-      [XFile(path)],
-      subject: 'Admin HR Report',
-      text: 'Please find the generated HR and Tracking report attached.',
+    // Trigger System Share Sheet using modern API
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(path)],
+        subject: 'Admin HR Report',
+        text: 'Please find the generated HR and Tracking report attached.',
+      ),
     );
 
     return path;

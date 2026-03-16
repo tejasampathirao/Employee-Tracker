@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import 'package:intl/intl.dart';
 import '../services/mqtt_handler.dart';
@@ -226,8 +227,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
         }
 
         // Proceed with check-in only if within 100m
-        final user = await DatabaseHelper.instance.getUser();
-        final empId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+        final prefs = await SharedPreferences.getInstance();
+        final empId = prefs.getString('employee_id') ?? 'Unknown';
 
         final id = await DatabaseHelper.instance.checkIn(
           timeString, 
@@ -280,8 +281,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
           );
 
           // Publish to MQTT using standardized function
-          final user = await DatabaseHelper.instance.getUser();
-          final empId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+          final prefs = await SharedPreferences.getInstance();
+          final empId = prefs.getString('employee_id') ?? 'Unknown';
           
           mqttService.publishAttendance(
             status: finalStatus,
