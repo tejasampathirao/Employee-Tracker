@@ -137,9 +137,19 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              request['employee_id'] ?? 'Unknown Employee',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                            Builder(
+                              builder: (context) {
+                                String empName = request['employee_name'] ?? request['employee_id'] ?? 'Unknown';
+                                String empId = request['real_employee_id'] ?? request['employee_id'] ?? '';
+                                String displayTitle = (empId.isNotEmpty && empName != empId) 
+                                    ? '$empName ($empId)' 
+                                    : empName;
+
+                                return Text(
+                                  displayTitle,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                );
+                              }
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -167,9 +177,11 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                               children: [
                                 const Icon(Icons.calendar_today, size: 16, color: Colors.blue),
                                 const SizedBox(width: 8),
-                                Text(
-                                  "📅 Date: ${request['date'] ?? request['timestamp']?.split('T')[0]}",
-                                  style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w500),
+                                Expanded(
+                                  child: Text(
+                                    "📅 Date: ${request['date'] ?? request['timestamp']?.split('T')[0]}",
+                                    style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w500),
+                                  ),
                                 ),
                               ],
                             ),
@@ -182,9 +194,11 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                               children: [
                                 const Icon(Icons.location_on, size: 16, color: Colors.red),
                                 const SizedBox(width: 8),
-                                Text(
-                                  "📍 Location: Lat: ${request['latitude']?.toStringAsFixed(4)}, Lng: ${request['longitude']?.toStringAsFixed(4)}",
-                                  style: TextStyle(color: Colors.grey[800]),
+                                Expanded(
+                                  child: Text(
+                                    "📍 Location: Lat: ${request['latitude']?.toStringAsFixed(4)}, Lng: ${request['longitude']?.toStringAsFixed(4)}",
+                                    style: TextStyle(color: Colors.grey[800]),
+                                  ),
                                 ),
                               ],
                             ),
@@ -238,6 +252,33 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                           isLeave ? (request['reason'] ?? 'No reason') : (request['description'] ?? 'No description'),
                           style: TextStyle(color: Colors.grey[700]),
                         ),
+                        if ((request['type'] ?? request['expense_category'] ?? '').toString().toLowerCase().contains('travel')) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.location_on, size: 16, color: Colors.blueGrey),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Location: ${request['latitude'] ?? 'N/A'}, ${request['longitude'] ?? 'N/A'}',
+                                  style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.map, size: 16, color: Colors.blueGrey),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Distance: ${request['distance'] ?? '0.0'} km',
+                                style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,

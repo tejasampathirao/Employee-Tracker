@@ -79,7 +79,18 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
         setState(() {
           _stats = stats;
           if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
-            _checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+            final checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+            final now = DateTime.now();
+
+            // SAME DAY RULE: If check-in is NOT from today, it's a stale session
+            if (checkInTime.day == now.day && 
+                checkInTime.month == now.month && 
+                checkInTime.year == now.year) {
+              _checkInTime = checkInTime;
+            } else {
+              AppLogger.log("STALE SESSION: Dashboard ignoring previous day's check-in: ${lastAttendance['checkInTime']}");
+              _checkInTime = null;
+            }
           }
         });
       }

@@ -371,19 +371,21 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getUnifiedPendingApprovals() async {
     final db = await instance.database;
     
-    // Fetch pending leaves
-    final List<Map<String, dynamic>> leaves = await db.query(
-      'leave_requests',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
-    );
+    // Fetch pending leaves with real_employee_id via JOIN on users table
+    final List<Map<String, dynamic>> leaves = await db.rawQuery('''
+      SELECT l.*, u.emp_id as real_employee_id 
+      FROM leave_requests l 
+      LEFT JOIN users u ON l.employee_id = u.name 
+      WHERE l.status = 'Pending'
+    ''');
 
-    // Fetch pending expenses
-    final List<Map<String, dynamic>> expenses = await db.query(
-      'employee_expenses',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
-    );
+    // Fetch pending expenses with real_employee_id via JOIN on users table
+    final List<Map<String, dynamic>> expenses = await db.rawQuery('''
+      SELECT e.*, u.emp_id as real_employee_id 
+      FROM employee_expenses e 
+      LEFT JOIN users u ON e.employee_id = u.name 
+      WHERE e.status = 'Pending'
+    ''');
 
     // Combine and mark types
     List<Map<String, dynamic>> combined = [];
@@ -569,23 +571,21 @@ class DatabaseHelper {
     final monthStartStr = "${DateFormat('yyyy-MM').format(now)}-01";
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
 
-    // Requirement: CASE INSENSITIVE (UPPER) and logic parity with Employee Dashboard
+    // Updated: Ensuring strict employee_id filter is applied to prevent company-wide summing
     final monthlyRecords = await db.rawQuery('''
       SELECT COUNT(DISTINCT date) as count
       FROM attendance
-      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND (status = 'Present' OR checkInTime IS NOT NULL)
+      WHERE employee_id = ? AND date >= ? AND (status = 'Present' OR checkInTime IS NOT NULL)
     ''', [employeeId, monthStartStr]);
 
     int monthlyPresent = Sqflite.firstIntValue(monthlyRecords) ?? 0;
-    // Requirement: DOUBLE CASTING
     double attendancePercentage = (monthlyPresent.toDouble() / daysInMonth.toDouble()) * 100.0;
 
     // 2. Late Minutes Calculation (Current Month)
-    // Shift Start: 9:00 AM
     final checkInRecords = await db.rawQuery('''
       SELECT checkInTime 
       FROM attendance 
-      WHERE UPPER(employee_id) = UPPER(?) AND date >= ? AND checkInTime IS NOT NULL
+      WHERE employee_id = ? AND date >= ? AND checkInTime IS NOT NULL
     ''', [employeeId, monthStartStr]);
 
     int totalLateMinutes = 0;

@@ -205,7 +205,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: DropdownButtonFormField<String>(
-        value: _selectedRole,
+        initialValue: _selectedRole,
         decoration: InputDecoration(
           icon: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
           border: InputBorder.none,

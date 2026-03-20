@@ -13,7 +13,7 @@ class MqttHandler {
   factory MqttHandler() => _instance;
 
   late MqttServerClient client;
-  final String broker = '13.203.2.58';
+  final String broker = '13.203.2.58'; // Magic IP for Android Emulator
   final int port = 1883;
   final _uuid = const Uuid();
   
@@ -31,6 +31,7 @@ class MqttHandler {
   void _initializeClient() {
     final String clientId = 'flutter_app_${Random().nextInt(100000)}';
     client = MqttServerClient.withPort(broker, clientId, port);
+    client.connectTimeoutPeriod = 3000; // Stop trying to connect after 3 seconds
 
     client.keepAlivePeriod = 20;
     client.onDisconnected = _onDisconnected;
@@ -277,7 +278,7 @@ class MqttHandler {
     
     try {
       AppLogger.log('MQTT: Connecting to $broker:$port...');
-      await client.connect();
+      await client.connect().timeout(const Duration(seconds: 5));
       // Removed redundant _setupMessageListener() call here as it's triggered in _onConnected()
       return true;
     } catch (e) {
@@ -353,11 +354,25 @@ class MqttHandler {
               break;
 
             case 'expense_claim':
-            case 'travel_expense':
             case 'additional_expense':
             case 'material_expense':
               await DatabaseHelper.instance.insertExpenseRecord(payload);
               AppLogger.log('MQTT Sync: $type saved.');
+              break;
+
+            case 'travel_expense':
+              // Extract nested coordinates so the SQLite DB can read them
+              if (payload['route_info'] != null) {
+                payload['latitude'] = payload['latitude'] ?? payload['route_info']['source']?['lat'];
+                payload['longitude'] = payload['longitude'] ?? payload['route_info']['source']?['lng'];
+                payload['distance'] = payload['distance'] ?? payload['route_info']['distance_km'];
+              }
+              AppLogger.log('MQTT DEBUG: Attempting to insert travel expense...');
+              try {
+                await DatabaseHelper.instance.insertExpenseRecord(payload);
+              } catch (dbError) {
+                AppLogger.log('MQTT ERROR: Database rejected expense: $dbError');
+              }
               break;
 
             case 'location_update':
@@ -380,14 +395,23 @@ class MqttHandler {
     return topicMessages[topic];
   }
 
-  void publish(String topic, String message, {bool retain = true}) {
-    if (client.connectionStatus?.state == MqttConnectionState.connected) {
+  void publish(String topic, String message, {bool retain = false}) async { // Changed to false
+    if (client.connectionStatus?.state != MqttConnectionState.connected) {
+      AppLogger.log('MQTT: Client not connected. Attempting to connect before publishing...');
+      bool connected = await connect();
+      if (!connected) {
+        AppLogger.log('MQTT Error: Reconnect failed. Message dropped.');
+        return;
+      }
+    }
+    
+    try {
       final builder = MqttClientPayloadBuilder();
       builder.addString(message);
       client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!, retain: retain);
-    } else {
-      AppLogger.log('MQTT Error: Cannot publish, client not connected');
-      connect(); // Attempt auto-reconnect
+      AppLogger.log('MQTT: Successfully published to $topic');
+    } catch (e) {
+      AppLogger.log('MQTT Error: Failed to publish - $e');
     }
   }
 

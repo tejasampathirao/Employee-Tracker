@@ -38,12 +38,14 @@ class _AttendanceCardState extends State<AttendanceCard> {
     _initializeNotifications();
     _loadLastAttendance();
     _setupMqtt();
+  }
 
-    // Requirement 2: Setup live geofence listener
+  void _startGeofenceMonitoring() {
+    _positionStream?.cancel();
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
+        accuracy: LocationAccuracy.high, 
+        distanceFilter: 10
       ),
     ).listen((Position position) {
       if (_isCheckedIn) {
@@ -60,6 +62,7 @@ class _AttendanceCardState extends State<AttendanceCard> {
         if (distance > 100) {
           AppLogger.log("GEOFENCE: Auto-checkout triggered (out of bounds)");
           _handleCheckInOut(isAuto: true);
+          _positionStream?.cancel();
         }
       }
     });
@@ -158,12 +161,33 @@ class _AttendanceCardState extends State<AttendanceCard> {
     await DatabaseHelper.instance.getAllAttendance();
 
     if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
+      final checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+      final now = DateTime.now();
+
+      // SAME DAY RULE: If check-in is NOT from today, it's a stale session
+      if (checkInTime.day != now.day || 
+          checkInTime.month != now.month || 
+          checkInTime.year != now.year) {
+        
+        AppLogger.log("STALE SESSION: Auto-resetting UI for previous day's check-in: ${lastAttendance['checkInTime']}");
+        
+        // Reset state variables for UI
+        setState(() {
+          _isCheckedIn = false;
+          _checkInTime = null;
+          _currentAttendanceId = null;
+          _duration = Duration.zero;
+        });
+        return;
+      }
+
       setState(() {
         _isCheckedIn = true;
         _currentAttendanceId = lastAttendance['id'];
-        _checkInTime = DateTime.parse(lastAttendance['checkInTime']);
+        _checkInTime = checkInTime;
         _startTimer();
       });
+      _startGeofenceMonitoring(); // Resume monitoring
       // Resume location tracking if already checked in
       // Note: We might need to handle the MQTT client migration here too
     }
@@ -260,6 +284,7 @@ class _AttendanceCardState extends State<AttendanceCard> {
           _duration = Duration.zero;
         });
         _startTimer();
+        _startGeofenceMonitoring(); // Start geofencing stream immediately
         
         // Requirement 2: Schedule 5:30 PM reminder on Check-In
         _scheduleShiftEndReminder();
@@ -269,6 +294,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
       } else {
         // Requirement 2: Minimum Duration for "Present" Status
         if (_currentAttendanceId != null && _checkInTime != null) {
+          _positionStream?.cancel(); // STOP monitoring immediately on manual checkout
+          
           Duration worked = now.difference(_checkInTime!);
           // DATABASE LOGIC: Explicitly save strings
           String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
