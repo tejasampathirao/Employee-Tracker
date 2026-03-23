@@ -25,3 +25,7 @@ const kTextStyleForm = TextStyle(
 const double kOfficeLatitude = 13.0022; // Example:Office
 const double kOfficeLongitude = 77.4965;
 const double kGeofenceRadiusMeter = 100.0; // 100 meters radius
+
+// Shift Timing Constants
+const int kShiftEndHour = 17; // 5 PM
+const int kShiftEndMinute = 30; // 5:30 PM

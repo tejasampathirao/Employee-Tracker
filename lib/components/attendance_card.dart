@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
@@ -20,7 +21,8 @@ class AttendanceCard extends StatefulWidget {
   State<AttendanceCard> createState() => _AttendanceCardState();
 }
 
-class _AttendanceCardState extends State<AttendanceCard> {
+class _AttendanceCardState extends State<AttendanceCard>
+    with WidgetsBindingObserver {
   bool _isCheckedIn = false;
   DateTime? _checkInTime;
   Timer? _timer;
@@ -36,42 +38,139 @@ class _AttendanceCardState extends State<AttendanceCard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeNotifications();
     _loadLastAttendance();
     _setupMqtt();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check attendance state when app returns to foreground
+    // (handles case where auto-checkout happened in background)
+    if (state == AppLifecycleState.resumed) {
+      _loadLastAttendance();
+    }
+  }
+
   void _startGeofenceMonitoring() {
     _positionStream?.cancel();
+
+    // Use AndroidSettings with foreground notification so geofence
+    // monitoring continues even when the app is in background/closed
+    late LocationSettings locationSettings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText:
+              "Employee Tracker is monitoring your office location",
+          notificationTitle: "Office Check-in Active",
+          enableWakeLock: true,
+        ),
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+    }
+
     _positionStream =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10,
-          ),
-        ).listen((Position position) {
-          if (_isCheckedIn) {
-            double distance = Geolocator.distanceBetween(
-              position.latitude,
-              position.longitude,
-              kOfficeLatitude,
-              kOfficeLongitude,
-            );
-
-            AppLogger.log(
-              "GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m",
-            );
-
-            // Requirement 2: IF distance > 100m AND checked-in, trigger auto-checkout
-            if (distance > 100) {
-              AppLogger.log(
-                "GEOFENCE: Auto-checkout triggered (out of bounds)",
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (Position position) {
+            if (_isCheckedIn) {
+              double distance = Geolocator.distanceBetween(
+                position.latitude,
+                position.longitude,
+                kOfficeLatitude,
+                kOfficeLongitude,
               );
-              _handleCheckInOut(isAuto: true);
-              _positionStream?.cancel();
+
+              AppLogger.log(
+                "GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m",
+              );
+
+              if (distance > kGeofenceRadiusMeter) {
+                AppLogger.log(
+                  "GEOFENCE: Auto-checkout triggered (out of bounds)",
+                );
+                _performAutoCheckout();
+              }
             }
-          }
-        });
+          },
+        );
+  }
+
+  /// Background-safe auto-checkout — works even when the app is not in foreground
+  Future<void> _performAutoCheckout() async {
+    if (_currentAttendanceId == null || _checkInTime == null) return;
+
+    _positionStream?.cancel();
+
+    final now = DateTime.now();
+    final timeString = now.toIso8601String();
+
+    Duration worked = now.difference(_checkInTime!);
+    String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
+
+    await DatabaseHelper.instance.checkOut(
+      timeString,
+      _currentAttendanceId!,
+      status: finalStatus,
+    );
+
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      final empId = prefs.getString('employee_id') ?? 'Unknown';
+
+      mqttService.publishAttendance(
+        status: finalStatus,
+        lat: position.latitude,
+        lng: position.longitude,
+        employeeId: empId,
+      );
+    } catch (e) {
+      AppLogger.log("AUTO-CHECKOUT: Failed to publish MQTT: $e");
+    }
+
+    _cancelShiftEndReminder();
+    _timer?.cancel();
+
+    // Show notification so employee knows they were auto-checked-out
+    await flutterLocalNotificationsPlugin.show(
+      2,
+      'Auto Checkout',
+      'You left the office area. Status: $finalStatus',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'auto_checkout',
+          'Auto Checkout',
+          channelDescription: 'Notifications for automatic checkout',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {
+        _isCheckedIn = false;
+        _checkInTime = null;
+        _currentAttendanceId = null;
+        _duration = Duration.zero;
+      });
+    }
+
+    if (widget.onActionComplete != null) widget.onActionComplete!();
+    AppLogger.log("AUTO-CHECKOUT: Completed with status: $finalStatus");
   }
 
   void _setupMqtt() async {
@@ -329,7 +428,33 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
         if (widget.onActionComplete != null) widget.onActionComplete!();
       } else {
-        // Requirement 2: Minimum Duration for "Present" Status
+        // Prevent manual checkout before shift end time (5:30 PM)
+        if (!isAuto) {
+          final shiftEnd = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            kShiftEndHour,
+            kShiftEndMinute,
+          );
+          if (now.isBefore(shiftEnd)) {
+            if (mounted) {
+              final remaining = shiftEnd.difference(now);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Cannot check out before shift end (5:30 PM). Remaining: ${_formatDuration(remaining)}',
+                  ),
+                  backgroundColor: Colors.orange,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+        }
+
+        // Minimum Duration for "Present" Status
         if (_currentAttendanceId != null && _checkInTime != null) {
           _positionStream
               ?.cancel(); // STOP monitoring immediately on manual checkout
@@ -409,8 +534,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    _positionStream?.cancel(); // Requirement 2: Prevent memory leaks
+    _positionStream?.cancel();
     super.dispose();
   }
 
