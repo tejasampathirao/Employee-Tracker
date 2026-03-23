@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -22,8 +23,8 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchThisMonthHistory() async {
-    final user = await DatabaseHelper.instance.getUser();
-    final String empId = user?['emp_id'] ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    final String empId = prefs.getString('employee_id') ?? '';
     return DatabaseHelper.instance.getCurrentMonthAttendance(empId);
   }
 
@@ -47,15 +48,22 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 48,
+                      ),
                       const SizedBox(height: 16),
-                      Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.red),
+                      ),
                       TextButton(
                         onPressed: () => setState(() {
                           _thisMonthFuture = _fetchThisMonthHistory();
                         }),
                         child: const Text('Retry'),
-                      )
+                      ),
                     ],
                   ),
                 );
@@ -67,9 +75,16 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.calendar_today_outlined, color: Colors.grey, size: 48),
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        color: Colors.grey,
+                        size: 48,
+                      ),
                       SizedBox(height: 16),
-                      Text('No records found for this month.', style: TextStyle(color: Colors.grey)),
+                      Text(
+                        'No records found for this month.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
                     ],
                   ),
                 );
@@ -134,8 +149,10 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
 
     int officeCount = dataList.where((item) => item['type'] == 'Office').length;
     int awayCount = dataList.where((item) => item['type'] == 'Away').length;
-    int failedCount = dataList.where((item) => item['status'] == 'Failed').length;
-    
+    int failedCount = dataList
+        .where((item) => item['status'] == 'Failed')
+        .length;
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.blue[50],
@@ -154,8 +171,12 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
   }
 
   Widget _buildUnifiedListItem(Map<String, dynamic> data) {
-    final checkIn = data['checkInTime'] != null ? DateTime.parse(data['checkInTime']) : null;
-    final checkOut = data['checkOutTime'] != null ? DateTime.parse(data['checkOutTime']) : null;
+    final checkIn = data['checkInTime'] != null
+        ? DateTime.parse(data['checkInTime'])
+        : null;
+    final checkOut = data['checkOutTime'] != null
+        ? DateTime.parse(data['checkOutTime'])
+        : null;
     final type = data['type'] ?? 'Office';
     final status = data['status'] ?? 'Completed';
     final lat = data['latitude'] as double?;
@@ -182,21 +203,31 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                   children: [
                     Text(
                       DateFormat('EEE, MMM d, yyyy').format(date),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
-                            color: (type == 'Office' ? Colors.green : Colors.blue).withValues(alpha: 0.1),
+                            color:
+                                (type == 'Office' ? Colors.green : Colors.blue)
+                                    .withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             type.toUpperCase(),
                             style: TextStyle(
-                              color: type == 'Office' ? Colors.green : Colors.blue,
+                              color: type == 'Office'
+                                  ? Colors.green
+                                  : Colors.blue,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),
@@ -205,14 +236,21 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                         const SizedBox(width: 8),
                         if (status == 'Failed')
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.red.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
                               'LOCATION MISMATCH',
-                              style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                       ],
@@ -221,8 +259,13 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                 ),
                 if (lat != null && lng != null)
                   IconButton(
-                    icon: const Icon(Icons.location_on, color: Colors.red, size: 20),
-                    onPressed: () => _showAttendanceMap(context, lat, lng, dateString),
+                    icon: const Icon(
+                      Icons.location_on,
+                      color: Colors.red,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        _showAttendanceMap(context, lat, lng, dateString),
                   ),
               ],
             ),
@@ -230,8 +273,18 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildTimeInfo('IN', checkIn != null ? DateFormat('hh:mm a').format(checkIn) : '--:--'),
-                _buildTimeInfo('OUT', checkOut != null ? DateFormat('hh:mm a').format(checkOut) : '--:--'),
+                _buildTimeInfo(
+                  'IN',
+                  checkIn != null
+                      ? DateFormat('hh:mm a').format(checkIn)
+                      : '--:--',
+                ),
+                _buildTimeInfo(
+                  'OUT',
+                  checkOut != null
+                      ? DateFormat('hh:mm a').format(checkOut)
+                      : '--:--',
+                ),
                 _buildStatusBadge(checkOut == null ? 'Active' : status),
               ],
             ),
@@ -244,7 +297,14 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
   Widget _buildSummaryItem(String label, String value, Color color) {
     return Column(
       children: [
-        Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
       ],
     );
@@ -253,9 +313,19 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
   Widget _buildTimeInfo(String label, String time) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            color: Colors.grey,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(time, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          time,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
       ],
     );
   }
@@ -287,12 +357,21 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
       ),
       child: Text(
         status,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
 
-  void _showAttendanceMap(BuildContext context, double lat, double lng, String date) {
+  void _showAttendanceMap(
+    BuildContext context,
+    double lat,
+    double lng,
+    String date,
+  ) {
     GoogleMapController? mapController;
 
     showModalBottomSheet(
@@ -311,7 +390,10 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 40,
               height: 4,
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -325,8 +407,20 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Check-in Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                        Text('Recorded: $date', style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                        const Text(
+                          'Check-in Location',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                        Text(
+                          'Recorded: $date',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -348,8 +442,13 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                       Marker(
                         markerId: const MarkerId('attendance_loc'),
                         position: LatLng(lat, lng),
-                        infoWindow: InfoWindow(title: 'Check-in Location', snippet: date),
-                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                        infoWindow: InfoWindow(
+                          title: 'Check-in Location',
+                          snippet: date,
+                        ),
+                        icon: BitmapDescriptor.defaultMarkerWithHue(
+                          BitmapDescriptor.hueRed,
+                        ),
                       ),
                     },
                   ),
@@ -361,7 +460,9 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                         FloatingActionButton.small(
                           heroTag: 'recenter_checkin',
                           onPressed: () {
-                            mapController?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15));
+                            mapController?.animateCamera(
+                              CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15),
+                            );
                           },
                           backgroundColor: Colors.white,
                           child: const Icon(Icons.history, color: Colors.red),
@@ -372,15 +473,29 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                           onPressed: () async {
                             try {
                               final pos = await Geolocator.getCurrentPosition();
-                              mapController?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 15));
+                              mapController?.animateCamera(
+                                CameraUpdate.newLatLngZoom(
+                                  LatLng(pos.latitude, pos.longitude),
+                                  15,
+                                ),
+                              );
                             } catch (e) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not get live location')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Could not get live location',
+                                    ),
+                                  ),
+                                );
                               }
                             }
                           },
                           backgroundColor: Colors.white,
-                          child: const Icon(Icons.my_location, color: Colors.blue),
+                          child: const Icon(
+                            Icons.my_location,
+                            color: Colors.blue,
+                          ),
                         ),
                       ],
                     ),
@@ -394,17 +509,29 @@ class _AttendanceHistoryViewState extends State<AttendanceHistoryView> {
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: () async {
-                              final url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+                              final url =
+                                  'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
                               if (await canLaunchUrl(Uri.parse(url))) {
-                                await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                await launchUrl(
+                                  Uri.parse(url),
+                                  mode: LaunchMode.externalApplication,
+                                );
                               }
                             },
-                            icon: const Icon(Icons.directions, color: Colors.white),
-                            label: const Text('Directions', style: TextStyle(color: Colors.white)),
+                            icon: const Icon(
+                              Icons.directions,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Directions',
+                              style: TextStyle(color: Colors.white),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue,
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),

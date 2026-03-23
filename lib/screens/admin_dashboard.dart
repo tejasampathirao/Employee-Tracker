@@ -6,6 +6,7 @@ import '../components/attendance_card.dart';
 import 'admin_attendance_screen.dart';
 import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
+import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
@@ -138,6 +139,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   Icons.mark_email_read_outlined,
                   Colors.purple,
                   () => Navigator.pushNamed(context, AdminApprovalsScreen.id),
+                ),
+                _buildServiceCard(
+                  context,
+                  'Approval History',
+                  Icons.history,
+                  Colors.teal,
+                  () => Navigator.pushNamed(context, ApprovalHistoryScreen.id),
                 ),
                 _buildServiceCard(
                   context,

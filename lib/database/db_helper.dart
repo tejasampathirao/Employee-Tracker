@@ -435,6 +435,57 @@ class DatabaseHelper {
     return combined;
   }
 
+  /// Get unified approval history (Approved/Rejected) with optional date range filter
+  Future<List<Map<String, dynamic>>> getApprovalHistory({
+    String? fromDate,
+    String? toDate,
+  }) async {
+    final db = await instance.database;
+
+    String leaveWhere = "l.status IN ('Approved', 'Rejected')";
+    String expenseWhere = "e.status IN ('Approved', 'Rejected')";
+    List<dynamic> leaveArgs = [];
+    List<dynamic> expenseArgs = [];
+
+    if (fromDate != null && toDate != null) {
+      leaveWhere += " AND l.from_date >= ? AND l.from_date <= ?";
+      leaveArgs.addAll([fromDate, toDate]);
+      expenseWhere += " AND e.date >= ? AND e.date <= ?";
+      expenseArgs.addAll([fromDate, toDate]);
+    }
+
+    final List<Map<String, dynamic>> leaves = await db.rawQuery('''
+      SELECT l.*, u.emp_id as real_employee_id 
+      FROM leave_requests l 
+      LEFT JOIN users u ON l.employee_id = u.name 
+      WHERE $leaveWhere
+    ''', leaveArgs);
+
+    final List<Map<String, dynamic>> expenses = await db.rawQuery('''
+      SELECT e.*, u.emp_id as real_employee_id 
+      FROM employee_expenses e 
+      LEFT JOIN users u ON e.employee_id = u.name 
+      WHERE $expenseWhere
+    ''', expenseArgs);
+
+    List<Map<String, dynamic>> combined = [];
+
+    for (var leaf in leaves) {
+      Map<String, dynamic> item = Map.from(leaf);
+      item['approval_type'] = 'leave';
+      combined.add(item);
+    }
+
+    for (var expense in expenses) {
+      Map<String, dynamic> item = Map.from(expense);
+      item['approval_type'] = 'expense';
+      combined.add(item);
+    }
+
+    combined.sort((a, b) => (b['id'] as int).compareTo(a['id'] as int));
+    return combined;
+  }
+
   Future<int> insertLocationRecord(Map<String, dynamic> payload) async {
     final db = await instance.database;
     return await db.insert('live_locations', {

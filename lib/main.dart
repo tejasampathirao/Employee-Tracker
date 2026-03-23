@@ -10,6 +10,7 @@ import './screens/live_data_monitor_screen.dart';
 import './screens/admin_dashboard.dart';
 import './screens/admin_attendance_screen.dart';
 import './screens/admin_approvals_screen.dart';
+import './screens/approval_history_screen.dart';
 import './screens/admin_location_screen.dart';
 import './screens/admin_expenses_list_screen.dart';
 import './screens/employee_list_screen.dart';
@@ -23,17 +24,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Edge-to-Edge Display Configuration
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarDividerColor: Colors.transparent,
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-    systemNavigationBarIconBrightness: Brightness.dark,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
 
   // Ensure drawing behind the system bars
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  
+
   // Initialize Database in background
   DatabaseHelper.instance.database.then((db) {
     DatabaseHelper.instance.seedData();
@@ -69,7 +72,10 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Employee Tracker',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, primary: Colors.blue[800]!),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          primary: Colors.blue[800]!,
+        ),
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
@@ -82,19 +88,21 @@ class MyApp extends StatelessWidget {
         AdminDashboard.id: (context) => const AdminDashboard(),
         AdminAttendanceScreen.id: (context) => const AdminAttendanceScreen(),
         AdminApprovalsScreen.id: (context) => const AdminApprovalsScreen(),
+        ApprovalHistoryScreen.id: (context) => const ApprovalHistoryScreen(),
         AdminLocationScreen.id: (context) => const AdminLocationScreen(),
-        AdminExpensesListScreen.id: (context) => const AdminExpensesListScreen(),
+        AdminExpensesListScreen.id: (context) =>
+            const AdminExpensesListScreen(),
         EmployeeListScreen.id: (context) => const EmployeeListScreen(),
         EmployeeEditScreen.id: (context) => const EmployeeEditScreen(),
         TravelAttendanceScreen.id: (context) => const TravelAttendanceScreen(),
-        AdditionalExpensesScreen.id: (context) => const AdditionalExpensesScreen(),
-        EmployeeExpenseSubmissionScreen.id: (context) => const EmployeeExpenseSubmissionScreen(),
+        AdditionalExpensesScreen.id: (context) =>
+            const AdditionalExpensesScreen(),
+        EmployeeExpenseSubmissionScreen.id: (context) =>
+            const EmployeeExpenseSubmissionScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {
-          return MaterialPageRoute(
-            builder: (context) => const HomePage(),
-          );
+          return MaterialPageRoute(builder: (context) => const HomePage());
         }
         return null;
       },
