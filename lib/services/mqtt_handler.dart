@@ -23,6 +23,8 @@ class MqttHandler {
   final String locationTopic = 'employee/tracker/location';
   final String expensesTopic = 'employee/tracker/expenses';
   final String travelAttendanceTopic = 'employee/tracker/travel_attendance';
+  final String adminAnnouncementTopic = 'admin/broadcast/announcements';
+  final String employeeEodReportTopic = 'employee/tracker/eod_reports';
 
   MqttHandler._internal() {
     _initializeClient();
@@ -266,6 +268,42 @@ class MqttHandler {
     publish(expensesTopic, jsonString, retain: true);
   }
 
+  /// New Publisher: Admin Announcements
+  void publishAdminAnnouncement({
+    required String title,
+    required String message,
+    required String priority,
+    required String adminId,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "admin_announcement",
+      "request_id": _uuid.v4(),
+      "title": title,
+      "message": message,
+      "priority": priority,
+      "admin_id": adminId,
+      "timestamp": DateTime.now().toIso8601String()
+    };
+    publish(adminAnnouncementTopic, jsonEncode(payload));
+  }
+
+  /// New Publisher: Employee EOD Report
+  void publishEmployeeEodReport({
+    required String tasksCompleted,
+    required String issuesFaced,
+    required String employeeId,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "eod_report",
+      "request_id": _uuid.v4(),
+      "tasks_completed": tasksCompleted,
+      "issues_faced": issuesFaced,
+      "employee_id": employeeId,
+      "timestamp": DateTime.now().toIso8601String()
+    };
+    publish(employeeEodReportTopic, jsonEncode(payload));
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};
@@ -379,6 +417,24 @@ class MqttHandler {
             case 'live_location':
               await DatabaseHelper.instance.insertLocationRecord(payload);
               AppLogger.log('MQTT Sync: Location update saved.');
+              break;
+
+            case 'admin_announcement':
+              AppLogger.log('MQTT DEBUG: Attempting to insert announcement...');
+              try {
+                await DatabaseHelper.instance.insertAnnouncement(payload);
+              } catch (e) {
+                AppLogger.log('MQTT ERROR: Failed to save announcement - $e');
+              }
+              break;
+
+            case 'eod_report':
+              AppLogger.log('MQTT DEBUG: Attempting to insert EOD report...');
+              try {
+                await DatabaseHelper.instance.insertEodReport(payload);
+              } catch (e) {
+                AppLogger.log('MQTT ERROR: Failed to save EOD report - $e');
+              }
               break;
 
             default:

@@ -321,9 +321,51 @@ class DatabaseHelper {
         status TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        message TEXT,
+        priority TEXT,
+        admin_id TEXT,
+        timestamp TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS eod_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tasks_completed TEXT,
+        issues_faced TEXT,
+        employee_id TEXT,
+        timestamp TEXT
+      )
+    ''');
   }
 
   // --- MQTT Master Router Helper Methods ---
+
+  Future<int> insertAnnouncement(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    return await db.insert('announcements', {
+      'title': payload['title'],
+      'message': payload['message'],
+      'priority': payload['priority'],
+      'admin_id': payload['admin_id'],
+      'timestamp': payload['timestamp'] ?? DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<int> insertEodReport(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    return await db.insert('eod_reports', {
+      'tasks_completed': payload['tasks_completed'],
+      'issues_faced': payload['issues_faced'],
+      'employee_id': payload['employee_id'],
+      'timestamp': payload['timestamp'] ?? DateTime.now().toIso8601String(),
+    });
+  }
 
   Future<int> insertAttendance(Map<String, dynamic> payload) async {
     final db = await instance.database;
