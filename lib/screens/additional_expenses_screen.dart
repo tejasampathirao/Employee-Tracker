@@ -9,7 +9,8 @@ class AdditionalExpensesScreen extends StatefulWidget {
   static const String id = 'additional_expenses_screen';
 
   @override
-  State<AdditionalExpensesScreen> createState() => _AdditionalExpensesScreenState();
+  State<AdditionalExpensesScreen> createState() =>
+      _AdditionalExpensesScreenState();
 }
 
 class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
@@ -37,10 +38,12 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
 
   Future<void> _saveChanges() async {
     if (_isSubmitting) return;
-    
+
     if (!hasFood && !hasFuel && !hasTravel) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enable at least one expense type.')),
+        const SnackBar(
+          content: Text('Please enable at least one expense type.'),
+        ),
       );
       return;
     }
@@ -49,7 +52,9 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
 
     try {
       final user = await DatabaseHelper.instance.getUser();
-      final String employeeId = user != null ? (user['emp_id'] ?? 'Unknown') : 'Unknown';
+      final String employeeId = user != null
+          ? (user['emp_id'] ?? 'Unknown')
+          : 'Unknown';
 
       // 4. Submission Logic & MQTT Payload
       final Map<String, dynamic> payload = {
@@ -73,10 +78,26 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
       }
 
       final String jsonString = jsonEncode(payload);
-      
+
       // Publish to MQTT topic: employee/tracker/expenses
       MqttHandler().publish('employee/tracker/expenses', jsonString);
       AppLogger.log('MQTT: Published additional expenses: $jsonString');
+
+      // Publish to individual expense category topics
+      if (hasFood) {
+        MqttHandler().publishFoodExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(foodAmount.text) ?? 0.0,
+          description: foodDesc.text,
+        );
+      }
+      if (hasFuel) {
+        MqttHandler().publishFuelExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(fuelAmount.text) ?? 0.0,
+          description: fuelDesc.text,
+        );
+      }
 
       // Also save locally for history (using the common expenses table)
       if (hasFood) {
@@ -86,10 +107,10 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
           'description': foodDesc.text,
           'amount': double.tryParse(foodAmount.text) ?? 0.0,
           'date': DateTime.now().toIso8601String(),
-          'status': 'Pending'
+          'status': 'Pending',
         });
       }
-      
+
       if (hasFuel) {
         await DatabaseHelper.instance.insertExpense({
           'type': 'Fuel',
@@ -97,13 +118,16 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
           'description': fuelDesc.text,
           'amount': double.tryParse(fuelAmount.text) ?? 0.0,
           'date': DateTime.now().toIso8601String(),
-          'status': 'Pending'
+          'status': 'Pending',
         });
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expenses submitted successfully!'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Expenses submitted successfully!'),
+            backgroundColor: Colors.green,
+          ),
         );
         Navigator.pop(context);
       }
@@ -205,11 +229,15 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Select Travel Mode:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    "Select Travel Mode:",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                   const SizedBox(height: 8),
                   RadioGroup<String>(
                     groupValue: selectedTravelMode,
-                    onChanged: (val) => setState(() => selectedTravelMode = val),
+                    onChanged: (val) =>
+                        setState(() => selectedTravelMode = val),
                     child: Column(
                       children: [
                         _buildRadioTile("Rapido"),
@@ -234,12 +262,18 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
                   onPressed: _saveChanges,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
                     elevation: 2,
                   ),
                   child: const Text(
-                    'Save Changes', 
-                    style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)
+                    'Save Changes',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -279,11 +313,17 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
                   children: [
                     Icon(icon, color: Colors.blueAccent),
                     const SizedBox(width: 12),
-                    Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 Switch(
-                  value: isActive, 
+                  value: isActive,
                   onChanged: onToggle,
                   activeThumbColor: Colors.blueAccent,
                 ),

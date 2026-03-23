@@ -5,21 +5,24 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../database/db_helper.dart';
+import '../services/mqtt_handler.dart';
 
 class EmployeeExpenseDetailScreen extends StatefulWidget {
   final String employeeId;
   final String employeeName;
   const EmployeeExpenseDetailScreen({
-    super.key, 
-    required this.employeeId, 
-    required this.employeeName
+    super.key,
+    required this.employeeId,
+    required this.employeeName,
   });
 
   @override
-  State<EmployeeExpenseDetailScreen> createState() => _EmployeeExpenseDetailScreenState();
+  State<EmployeeExpenseDetailScreen> createState() =>
+      _EmployeeExpenseDetailScreenState();
 }
 
-class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScreen> {
+class _EmployeeExpenseDetailScreenState
+    extends State<EmployeeExpenseDetailScreen> {
   // Category Selections
   bool _hasFood = false;
   bool _hasFuel = false;
@@ -87,16 +90,54 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
         });
       }
 
+      // Publish to MQTT category topics
+      if (_hasFood) {
+        MqttHandler().publishFoodExpense(
+          employeeId: widget.employeeId,
+          amount: double.tryParse(_foodAmt.text) ?? 0.0,
+          description: _foodDesc.text,
+        );
+      }
+      if (_hasFuel) {
+        MqttHandler().publishFuelExpense(
+          employeeId: widget.employeeId,
+          amount: double.tryParse(_fuelAmt.text) ?? 0.0,
+          description: _fuelDesc.text,
+        );
+      }
+      if (_hasTravel) {
+        MqttHandler().publishTravelCategoryExpense(
+          employeeId: widget.employeeId,
+          amount: double.tryParse(_travelAmt.text) ?? 0.0,
+          description: _travelDesc.text,
+        );
+      }
+      if (_hasMaterial) {
+        MqttHandler().publishMaterialExpense(
+          employeeId: widget.employeeId,
+          amount: double.tryParse(_materialAmt.text) ?? 0.0,
+          description: _materialDesc.text,
+        );
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Data saved directly to records (Bypassed Approvals).'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text(
+              'Data saved directly to records (Bypassed Approvals).',
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving expenses: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error saving expenses: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -117,14 +158,19 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
         final startDate = DateFormat('yyyy-MM-dd').format(picked.start);
         final endDate = DateFormat('yyyy-MM-dd').format(picked.end);
 
-        final expenses = await DatabaseHelper.instance.getExpensesByEmployeeAndDateRange(
-          widget.employeeId, startDate, endDate
-        );
+        final expenses = await DatabaseHelper.instance
+            .getExpensesByEmployeeAndDateRange(
+              widget.employeeId,
+              startDate,
+              endDate,
+            );
 
         if (expenses.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No expenses found for this range.')),
+              const SnackBar(
+                content: Text('No expenses found for this range.'),
+              ),
             );
           }
           return;
@@ -133,12 +179,12 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
         // Generate Excel
         var excel = Excel.createExcel();
         Sheet sheet = excel['Expenses'];
-        
+
         sheet.appendRow([
-          TextCellValue('Date'), 
-          TextCellValue('Category'), 
-          TextCellValue('Description'), 
-          TextCellValue('Amount (₹)')
+          TextCellValue('Date'),
+          TextCellValue('Category'),
+          TextCellValue('Description'),
+          TextCellValue('Amount (₹)'),
         ]);
 
         for (var ex in expenses) {
@@ -151,23 +197,30 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
         }
 
         final directory = await getApplicationDocumentsDirectory();
-        final fileName = "Expenses_${widget.employeeId}_${startDate}_to_$endDate.xlsx";
+        final fileName =
+            "Expenses_${widget.employeeId}_${startDate}_to_$endDate.xlsx";
         final path = p.join(directory.path, fileName);
         final file = File(path);
-        
+
         final bytes = excel.save();
         if (bytes != null) {
           await file.writeAsBytes(bytes);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Report saved to: $path'), duration: const Duration(seconds: 5)),
+              SnackBar(
+                content: Text('Report saved to: $path'),
+                duration: const Duration(seconds: 5),
+              ),
             );
           }
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error generating report: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('Error generating report: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       } finally {
@@ -193,41 +246,79 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
           ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                _buildExpenseSection('Food Expenses', _hasFood, (val) => setState(() => _hasFood = val!), _foodDesc, _foodAmt),
-                const SizedBox(height: 20),
-                _buildExpenseSection('Fuel Expenses', _hasFuel, (val) => setState(() => _hasFuel = val!), _fuelDesc, _fuelAmt),
-                const SizedBox(height: 20),
-                _buildExpenseSection('Travel Expenses', _hasTravel, (val) => setState(() => _hasTravel = val!), _travelDesc, _travelAmt),
-                const SizedBox(height: 20),
-                _buildExpenseSection('Material Expenses', _hasMaterial, (val) => setState(() => _hasMaterial = val!), _materialDesc, _materialAmt),
-                const SizedBox(height: 40),
-                SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton.icon(
-                    onPressed: _saveExpenses,
-                    icon: const Icon(Icons.save),
-                    label: const Text('SAVE EXPENSES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  _buildExpenseSection(
+                    'Food Expenses',
+                    _hasFood,
+                    (val) => setState(() => _hasFood = val!),
+                    _foodDesc,
+                    _foodAmt,
+                  ),
+                  const SizedBox(height: 20),
+                  _buildExpenseSection(
+                    'Fuel Expenses',
+                    _hasFuel,
+                    (val) => setState(() => _hasFuel = val!),
+                    _fuelDesc,
+                    _fuelAmt,
+                  ),
+                  const SizedBox(height: 20),
+                  _buildExpenseSection(
+                    'Travel Expenses',
+                    _hasTravel,
+                    (val) => setState(() => _hasTravel = val!),
+                    _travelDesc,
+                    _travelAmt,
+                  ),
+                  const SizedBox(height: 20),
+                  _buildExpenseSection(
+                    'Material Expenses',
+                    _hasMaterial,
+                    (val) => setState(() => _hasMaterial = val!),
+                    _materialDesc,
+                    _materialAmt,
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveExpenses,
+                      icon: const Icon(Icons.save),
+                      label: const Text(
+                        'SAVE EXPENSES',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
     );
   }
 
-  Widget _buildExpenseSection(String title, bool isVisible, ValueChanged<bool?> onChanged, TextEditingController desc, TextEditingController amt) {
+  Widget _buildExpenseSection(
+    String title,
+    bool isVisible,
+    ValueChanged<bool?> onChanged,
+    TextEditingController desc,
+    TextEditingController amt,
+  ) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
@@ -237,7 +328,13 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 Switch(value: isVisible, onChanged: onChanged),
               ],
             ),
@@ -247,7 +344,9 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
                 controller: desc,
                 decoration: InputDecoration(
                   labelText: 'Description',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 15),
@@ -257,10 +356,12 @@ class _EmployeeExpenseDetailScreenState extends State<EmployeeExpenseDetailScree
                 decoration: InputDecoration(
                   labelText: 'Amount (₹)',
                   prefixText: '₹ ',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-            ]
+            ],
           ],
         ),
       ),

@@ -13,16 +13,27 @@ class MqttHandler {
   factory MqttHandler() => _instance;
 
   late MqttServerClient client;
-  final String broker = '13.203.2.58'; // Magic IP for Android Emulator
+  final String broker =
+      '10.0.2.2'; // Android Emulator alias for host machine's localhost
   final int port = 1883;
   final _uuid = const Uuid();
-  
+
   // Standardized Topics
   final String attendanceTopic = 'employee/tracker';
   final String leaveTopic = 'employee/tracker/hr/leaves';
   final String locationTopic = 'employee/tracker/location';
   final String expensesTopic = 'employee/tracker/expenses';
   final String travelAttendanceTopic = 'employee/tracker/travel_attendance';
+
+  // Admin Service Topics
+  final String adminAttendanceTopic = 'admin/attendance';
+  final String adminApprovalsTopic = 'admin/approvals';
+
+  // Expense Category Topics
+  final String expenseFoodTopic = 'employee/tracker/expenses/food';
+  final String expenseFuelTopic = 'employee/tracker/expenses/fuel';
+  final String expenseTravelTopic = 'employee/tracker/expenses/travel';
+  final String expenseMaterialTopic = 'employee/tracker/expenses/material';
 
   MqttHandler._internal() {
     _initializeClient();
@@ -31,7 +42,8 @@ class MqttHandler {
   void _initializeClient() {
     final String clientId = 'flutter_app_${Random().nextInt(100000)}';
     client = MqttServerClient.withPort(broker, clientId, port);
-    client.connectTimeoutPeriod = 3000; // Stop trying to connect after 3 seconds
+    client.connectTimeoutPeriod =
+        3000; // Stop trying to connect after 3 seconds
 
     client.keepAlivePeriod = 20;
     client.onDisconnected = _onDisconnected;
@@ -63,7 +75,7 @@ class MqttHandler {
       "from_date": fromDate,
       "to_date": toDate,
       "reason": reason,
-      "employee_id": employeeId
+      "employee_id": employeeId,
     };
 
     final String jsonString = jsonEncode(payload);
@@ -84,7 +96,7 @@ class MqttHandler {
       "status": status,
       "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
-      "location": {"lat": lat, "lng": lng}
+      "location": {"lat": lat, "lng": lng},
     };
 
     final String jsonString = jsonEncode(payload);
@@ -104,7 +116,7 @@ class MqttHandler {
       "lat": lat,
       "lng": lng,
       "employee_id": employeeId,
-      "timestamp": DateTime.now().toIso8601String()
+      "timestamp": DateTime.now().toIso8601String(),
     };
 
     final String jsonString = jsonEncode(payload);
@@ -113,7 +125,12 @@ class MqttHandler {
   }
 
   /// Function 4: Publishes an expense claim
-  void publishExpense(String category, String description, double amount, String employeeId) {
+  void publishExpense(
+    String category,
+    String description,
+    double amount,
+    String employeeId,
+  ) {
     final Map<String, dynamic> payload = {
       "type": "expense_claim",
       "request_id": _uuid.v4(),
@@ -121,7 +138,7 @@ class MqttHandler {
       "description": description,
       "amount": amount,
       "timestamp": DateTime.now().toIso8601String(),
-      "employee_id": employeeId
+      "employee_id": employeeId,
     };
 
     final String jsonString = jsonEncode(payload);
@@ -152,8 +169,8 @@ class MqttHandler {
       "route_info": {
         "source": {"lat": srcLat, "lng": srcLng},
         "destination": {"lat": destLat, "lng": destLng},
-        "distance_km": distanceKm
-      }
+        "distance_km": distanceKm,
+      },
     };
 
     final String jsonString = jsonEncode(payload);
@@ -175,11 +192,13 @@ class MqttHandler {
       "amount": amount,
       "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
-      "bill_image_path": billImagePath
+      "bill_image_path": billImagePath,
     };
 
     final String jsonString = jsonEncode(payload);
-    AppLogger.log('MQTT DEBUG [Additional Expense]: Sending Payload: $jsonString');
+    AppLogger.log(
+      'MQTT DEBUG [Additional Expense]: Sending Payload: $jsonString',
+    );
     publish(expensesTopic, jsonString);
   }
 
@@ -195,12 +214,15 @@ class MqttHandler {
       "description": description,
       "work_type": workType,
       "employee_id": employeeId,
-      "timestamp": DateTime.now().toIso8601String()
+      "timestamp": DateTime.now().toIso8601String(),
     };
 
     final String jsonString = jsonEncode(payload);
     AppLogger.log('MQTT DEBUG [Work Log]: Sending Payload: $jsonString');
-    publish(attendanceTopic, jsonString); // Using attendance topic for work logs
+    publish(
+      attendanceTopic,
+      jsonString,
+    ); // Using attendance topic for work logs
   }
 
   /// Function 8: Publishes a work report generation event
@@ -217,12 +239,15 @@ class MqttHandler {
       "from_date": fromDate,
       "to_date": toDate,
       "total_worked": totalWorked,
-      "timestamp": DateTime.now().toIso8601String()
+      "timestamp": DateTime.now().toIso8601String(),
     };
 
     final String jsonString = jsonEncode(payload);
     AppLogger.log('MQTT DEBUG [Work Report]: Sending Payload: $jsonString');
-    publish(attendanceTopic, jsonString); // Using attendance topic for report events
+    publish(
+      attendanceTopic,
+      jsonString,
+    ); // Using attendance topic for report events
   }
 
   /// Function 9: Publishes travel attendance data
@@ -243,7 +268,9 @@ class MqttHandler {
     };
 
     final String jsonString = jsonEncode(payload);
-    AppLogger.log('MQTT DEBUG [Travel Attendance]: Sending Payload: $jsonString');
+    AppLogger.log(
+      'MQTT DEBUG [Travel Attendance]: Sending Payload: $jsonString',
+    );
     publish(travelAttendanceTopic, jsonString);
   }
 
@@ -258,12 +285,147 @@ class MqttHandler {
       "employee_id": employeeId,
       "status": "Pending",
       "timestamp": DateTime.now().toIso8601String(),
-      ...expenses
+      ...expenses,
     };
 
     final String jsonString = jsonEncode(payload);
     AppLogger.log('MQTT DEBUG [Expense Request]: Sending Payload: $jsonString');
     publish(expensesTopic, jsonString, retain: true);
+  }
+
+  // --- Admin Service Publish Functions ---
+
+  /// Publishes admin attendance data when an employee checks in
+  void publishAdminAttendance({
+    required String employeeId,
+    required String checkInTime,
+    required String date,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "admin_attendance",
+      "request_id": _uuid.v4(),
+      "employee_id": employeeId,
+      "check_in_time": checkInTime,
+      "date": date,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log(
+      'MQTT DEBUG [Admin Attendance]: Sending Payload: $jsonString',
+    );
+    publish(adminAttendanceTopic, jsonString);
+  }
+
+  /// Publishes admin approval data when admin approves a request
+  void publishAdminApproval({
+    required String employeeId,
+    required String approvalType,
+    required String requestId,
+    required String approvedBy,
+    required String status,
+    Map<String, dynamic>? additionalData,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "admin_approval",
+      "request_id": requestId,
+      "employee_id": employeeId,
+      "approval_type": approvalType,
+      "approved_by": approvedBy,
+      "status": status,
+      "timestamp": DateTime.now().toIso8601String(),
+      if (additionalData != null) ...additionalData,
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Admin Approval]: Sending Payload: $jsonString');
+    publish(adminApprovalsTopic, jsonString);
+  }
+
+  /// Publishes food expense data
+  void publishFoodExpense({
+    required String employeeId,
+    required double amount,
+    required String description,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "food_expense",
+      "request_id": _uuid.v4(),
+      "employee_id": employeeId,
+      "amount": amount,
+      "description": description,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Food Expense]: Sending Payload: $jsonString');
+    publish(expenseFoodTopic, jsonString);
+  }
+
+  /// Publishes fuel expense data
+  void publishFuelExpense({
+    required String employeeId,
+    required double amount,
+    required String description,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "fuel_expense",
+      "request_id": _uuid.v4(),
+      "employee_id": employeeId,
+      "amount": amount,
+      "description": description,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Fuel Expense]: Sending Payload: $jsonString');
+    publish(expenseFuelTopic, jsonString);
+  }
+
+  /// Publishes travel expense data
+  void publishTravelCategoryExpense({
+    required String employeeId,
+    required double amount,
+    required String description,
+    double? distanceKm,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "travel_category_expense",
+      "request_id": _uuid.v4(),
+      "employee_id": employeeId,
+      "amount": amount,
+      "description": description,
+      "distance_km": distanceKm,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log(
+      'MQTT DEBUG [Travel Category Expense]: Sending Payload: $jsonString',
+    );
+    publish(expenseTravelTopic, jsonString);
+  }
+
+  /// Publishes material expense data
+  void publishMaterialExpense({
+    required String employeeId,
+    required double amount,
+    required String description,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "material_expense",
+      "request_id": _uuid.v4(),
+      "employee_id": employeeId,
+      "amount": amount,
+      "description": description,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log(
+      'MQTT DEBUG [Material Expense]: Sending Payload: $jsonString',
+    );
+    publish(expenseMaterialTopic, jsonString);
   }
 
   // --- Core MQTT Logic ---
@@ -275,7 +437,7 @@ class MqttHandler {
     if (client.connectionStatus?.state == MqttConnectionState.connected) {
       return true;
     }
-    
+
     try {
       AppLogger.log('MQTT: Connecting to $broker:$port...');
       await client.connect().timeout(const Duration(seconds: 5));
@@ -289,14 +451,18 @@ class MqttHandler {
 
   void _setupMessageListener() {
     _subscription?.cancel();
-    _subscription = client.updates?.listen((List<MqttReceivedMessage<MqttMessage>>? messages) async {
+    _subscription = client.updates?.listen((
+      List<MqttReceivedMessage<MqttMessage>>? messages,
+    ) async {
       if (messages == null || messages.isEmpty) return;
 
       for (final message in messages) {
         final recMess = message.payload as MqttPublishMessage;
-        final content = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+        final content = MqttPublishPayload.bytesToStringAsString(
+          recMess.payload.message,
+        );
         final topic = message.topic;
-        
+
         topicMessages[topic] = content;
 
         try {
@@ -311,9 +477,11 @@ class MqttHandler {
               await DatabaseHelper.instance.updateRequestStatus(
                 payload['category'] ?? '',
                 payload['id']?.toString() ?? '',
-                payload['status'] ?? 'Pending'
+                payload['status'] ?? 'Pending',
               );
-              AppLogger.log('MQTT Sync: Status update saved for ${payload['category']} ${payload['id']}');
+              AppLogger.log(
+                'MQTT Sync: Status update saved for ${payload['category']} ${payload['id']}',
+              );
               break;
 
             case 'leave_request':
@@ -336,9 +504,12 @@ class MqttHandler {
               // Handle combined report/request by splitting it into individual records for DatabaseHelper
               final categories = ['food', 'fuel', 'travel', 'material'];
               for (var cat in categories) {
-                if (payload['${cat}_amount'] != null && (payload['${cat}_amount'] as num) > 0) {
+                if (payload['${cat}_amount'] != null &&
+                    (payload['${cat}_amount'] as num) > 0) {
                   await DatabaseHelper.instance.insertExpenseRecord({
-                    'request_id': requestId.isNotEmpty ? '${requestId}_$cat' : null,
+                    'request_id': requestId.isNotEmpty
+                        ? '${requestId}_$cat'
+                        : null,
                     'type': cat[0].toUpperCase() + cat.substring(1),
                     'employee_id': payload['employee_id'],
                     'amount': payload['${cat}_amount'],
@@ -363,15 +534,24 @@ class MqttHandler {
             case 'travel_expense':
               // Extract nested coordinates so the SQLite DB can read them
               if (payload['route_info'] != null) {
-                payload['latitude'] = payload['latitude'] ?? payload['route_info']['source']?['lat'];
-                payload['longitude'] = payload['longitude'] ?? payload['route_info']['source']?['lng'];
-                payload['distance'] = payload['distance'] ?? payload['route_info']['distance_km'];
+                payload['latitude'] =
+                    payload['latitude'] ??
+                    payload['route_info']['source']?['lat'];
+                payload['longitude'] =
+                    payload['longitude'] ??
+                    payload['route_info']['source']?['lng'];
+                payload['distance'] =
+                    payload['distance'] ?? payload['route_info']['distance_km'];
               }
-              AppLogger.log('MQTT DEBUG: Attempting to insert travel expense...');
+              AppLogger.log(
+                'MQTT DEBUG: Attempting to insert travel expense...',
+              );
               try {
                 await DatabaseHelper.instance.insertExpenseRecord(payload);
               } catch (dbError) {
-                AppLogger.log('MQTT ERROR: Database rejected expense: $dbError');
+                AppLogger.log(
+                  'MQTT ERROR: Database rejected expense: $dbError',
+                );
               }
               break;
 
@@ -382,10 +562,14 @@ class MqttHandler {
               break;
 
             default:
-              AppLogger.log('MQTT Router: Unknown payload type received: $type');
+              AppLogger.log(
+                'MQTT Router: Unknown payload type received: $type',
+              );
           }
         } catch (e) {
-          AppLogger.log('MQTT Router Error: Failed to parse or save payload: $e');
+          AppLogger.log(
+            'MQTT Router Error: Failed to parse or save payload: $e',
+          );
         }
       }
     });
@@ -395,20 +579,28 @@ class MqttHandler {
     return topicMessages[topic];
   }
 
-  void publish(String topic, String message, {bool retain = false}) async { // Changed to false
+  void publish(String topic, String message, {bool retain = false}) async {
+    // Changed to false
     if (client.connectionStatus?.state != MqttConnectionState.connected) {
-      AppLogger.log('MQTT: Client not connected. Attempting to connect before publishing...');
+      AppLogger.log(
+        'MQTT: Client not connected. Attempting to connect before publishing...',
+      );
       bool connected = await connect();
       if (!connected) {
         AppLogger.log('MQTT Error: Reconnect failed. Message dropped.');
         return;
       }
     }
-    
+
     try {
       final builder = MqttClientPayloadBuilder();
       builder.addString(message);
-      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!, retain: retain);
+      client.publishMessage(
+        topic,
+        MqttQos.atLeastOnce,
+        builder.payload!,
+        retain: retain,
+      );
       AppLogger.log('MQTT: Successfully published to $topic');
     } catch (e) {
       AppLogger.log('MQTT Error: Failed to publish - $e');
@@ -426,13 +618,20 @@ class MqttHandler {
   void _onConnected() async {
     AppLogger.log('MQTT: Connected Successfully');
     subscribe('employee/tracker/#');
-    
+    subscribe('admin/#');
+    subscribe('employee/tracker/expenses/food');
+    subscribe('employee/tracker/expenses/fuel');
+    subscribe('employee/tracker/expenses/travel');
+    subscribe('employee/tracker/expenses/material');
+
     // Subscribe to employee specific status topic
     final user = await DatabaseHelper.instance.getUser();
     if (user != null && user['emp_id'] != null) {
       final String empId = user['emp_id'];
       subscribe('employee/tracker/status/$empId');
-      AppLogger.log('MQTT: Subscribed to employee status topic: employee/tracker/status/$empId');
+      AppLogger.log(
+        'MQTT: Subscribed to employee status topic: employee/tracker/status/$empId',
+      );
     }
 
     _setupMessageListener();
@@ -451,4 +650,3 @@ class MqttHandler {
     client.disconnect();
   }
 }
-

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
+import '../services/mqtt_handler.dart';
+import '../components/attendance_card.dart';
 import 'admin_attendance_screen.dart';
 import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
@@ -9,18 +11,33 @@ import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
 
-class AdminDashboard extends StatelessWidget {
+class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
   static const String id = 'admin_dashboard';
 
+  @override
+  State<AdminDashboard> createState() => _AdminDashboardState();
+}
+
+class _AdminDashboardState extends State<AdminDashboard> {
+  @override
+  void initState() {
+    super.initState();
+    _initMqtt();
+  }
+
+  void _initMqtt() async {
+    await MqttHandler().connect();
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); 
+    await prefs.clear();
 
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(
-        context, 
-        LoginScreen.id, 
+        context,
+        LoginScreen.id,
         (route) => false,
       );
     }
@@ -53,8 +70,14 @@ class AdminDashboard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 30,
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  child: Icon(Icons.admin_panel_settings, size: 35, color: theme.colorScheme.primary),
+                  backgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.1,
+                  ),
+                  child: Icon(
+                    Icons.admin_panel_settings,
+                    size: 35,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Column(
@@ -62,7 +85,10 @@ class AdminDashboard extends StatelessWidget {
                   children: [
                     const Text(
                       'Welcome, Admin!',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       'Manage your workforce efficiently',
@@ -72,7 +98,14 @@ class AdminDashboard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
+            const Text(
+              'Your Attendance',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const AttendanceCard(),
+            const SizedBox(height: 24),
             const Text(
               'Management Services',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -111,7 +144,8 @@ class AdminDashboard extends StatelessWidget {
                   'Expenses Service',
                   Icons.payments_outlined,
                   Colors.green,
-                  () => Navigator.pushNamed(context, AdminExpensesListScreen.id),
+                  () =>
+                      Navigator.pushNamed(context, AdminExpensesListScreen.id),
                 ),
                 _buildServiceCard(
                   context,
@@ -126,27 +160,51 @@ class AdminDashboard extends StatelessWidget {
             Center(
               child: TextButton.icon(
                 onPressed: () async {
-                  bool confirm = await showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Wipe Data?'),
-                      content: const Text('This will delete all attendance records from the database.'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('WIPE', style: TextStyle(color: Colors.red))),
-                      ],
-                    ),
-                  ) ?? false;
-                  
+                  bool confirm =
+                      await showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Wipe Data?'),
+                          content: const Text(
+                            'This will delete all attendance records from the database.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text(
+                                'WIPE',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ) ??
+                      false;
+
                   if (confirm) {
                     await DatabaseHelper.instance.clearAttendanceTable();
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Attendance table cleared!')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Attendance table cleared!'),
+                        ),
+                      );
                     }
                   }
                 },
-                icon: const Icon(Icons.delete_sweep, color: Colors.red, size: 20),
-                label: const Text('Wipe Attendance Data (Temporary)', style: TextStyle(color: Colors.red)),
+                icon: const Icon(
+                  Icons.delete_sweep,
+                  color: Colors.red,
+                  size: 20,
+                ),
+                label: const Text(
+                  'Wipe Attendance Data (Temporary)',
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -158,8 +216,13 @@ class AdminDashboard extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red,
                   side: const BorderSide(color: Colors.red),
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -182,7 +245,10 @@ class AdminDashboard extends StatelessWidget {
           } catch (e) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to generate report: $e'), backgroundColor: Colors.red),
+                SnackBar(
+                  content: Text('Failed to generate report: $e'),
+                  backgroundColor: Colors.red,
+                ),
               );
             }
           }
@@ -195,7 +261,13 @@ class AdminDashboard extends StatelessWidget {
     );
   }
 
-  Widget _buildServiceCard(BuildContext context, String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildServiceCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
@@ -228,10 +300,7 @@ class AdminDashboard extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ],
         ),

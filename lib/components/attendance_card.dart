@@ -26,7 +26,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
   Timer? _timer;
   Duration _duration = Duration.zero;
   int? _currentAttendanceId;
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
   late MqttHandler mqttService;
 
   // Geofencing and History logic
@@ -42,30 +43,35 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
   void _startGeofenceMonitoring() {
     _positionStream?.cancel();
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high, 
-        distanceFilter: 10
-      ),
-    ).listen((Position position) {
-      if (_isCheckedIn) {
-        double distance = Geolocator.distanceBetween(
-          position.latitude,
-          position.longitude,
-          kOfficeLatitude,
-          kOfficeLongitude,
-        );
-        
-        AppLogger.log("GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m");
+    _positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((Position position) {
+          if (_isCheckedIn) {
+            double distance = Geolocator.distanceBetween(
+              position.latitude,
+              position.longitude,
+              kOfficeLatitude,
+              kOfficeLongitude,
+            );
 
-        // Requirement 2: IF distance > 100m AND checked-in, trigger auto-checkout
-        if (distance > 100) {
-          AppLogger.log("GEOFENCE: Auto-checkout triggered (out of bounds)");
-          _handleCheckInOut(isAuto: true);
-          _positionStream?.cancel();
-        }
-      }
-    });
+            AppLogger.log(
+              "GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m",
+            );
+
+            // Requirement 2: IF distance > 100m AND checked-in, trigger auto-checkout
+            if (distance > 100) {
+              AppLogger.log(
+                "GEOFENCE: Auto-checkout triggered (out of bounds)",
+              );
+              _handleCheckInOut(isAuto: true);
+              _positionStream?.cancel();
+            }
+          }
+        });
   }
 
   void _setupMqtt() async {
@@ -77,16 +83,17 @@ class _AttendanceCardState extends State<AttendanceCard> {
     tz.initializeTimeZones();
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-    // REQUIREMENT: Request Runtime Permissions for Notifications (Android 13+) 
+    // REQUIREMENT: Request Runtime Permissions for Notifications (Android 13+)
     // and Exact Alarms (Android 12+)
     final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+        flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
 
     if (androidImplementation != null) {
       // Request notification permission
@@ -99,7 +106,13 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
   Future<void> _scheduleNextShiftAlarm() async {
     final now = DateTime.now();
-    var scheduledDate = DateTime(now.year, now.month, now.day + 1, 9, 0); // 9:00 AM tomorrow
+    var scheduledDate = DateTime(
+      now.year,
+      now.month,
+      now.day + 1,
+      9,
+      0,
+    ); // 9:00 AM tomorrow
 
     await flutterLocalNotificationsPlugin.zonedSchedule(
       0,
@@ -124,7 +137,13 @@ class _AttendanceCardState extends State<AttendanceCard> {
   // Requirement 2: Schedule Reminder for 5:30 PM
   Future<void> _scheduleShiftEndReminder() async {
     final now = DateTime.now();
-    var scheduledDate = DateTime(now.year, now.month, now.day, 17, 30); // 5:30 PM Today
+    var scheduledDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      17,
+      30,
+    ); // 5:30 PM Today
 
     // If it's already past 5:30 PM, don't schedule for today
     if (now.isAfter(scheduledDate)) return;
@@ -156,7 +175,7 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
   Future<void> _loadLastAttendance() async {
     final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
-    
+
     // Load local history list
     await DatabaseHelper.instance.getAllAttendance();
 
@@ -165,12 +184,13 @@ class _AttendanceCardState extends State<AttendanceCard> {
       final now = DateTime.now();
 
       // SAME DAY RULE: If check-in is NOT from today, it's a stale session
-      if (checkInTime.day != now.day || 
-          checkInTime.month != now.month || 
+      if (checkInTime.day != now.day ||
+          checkInTime.month != now.month ||
           checkInTime.year != now.year) {
-        
-        AppLogger.log("STALE SESSION: Auto-resetting UI for previous day's check-in: ${lastAttendance['checkInTime']}");
-        
+        AppLogger.log(
+          "STALE SESSION: Auto-resetting UI for previous day's check-in: ${lastAttendance['checkInTime']}",
+        );
+
         // Reset state variables for UI
         setState(() {
           _isCheckedIn = false;
@@ -213,7 +233,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
 
   Future<void> _handleCheckInOut({bool isAuto = false}) async {
     // FIX 1: Location Runtime Permissions Check
-    final hasPermission = await LocationService().handleLocationPermission(context);
+    final hasPermission = await LocationService().handleLocationPermission(
+      context,
+    );
     if (!hasPermission) return;
 
     final now = DateTime.now();
@@ -224,7 +246,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
       if (!_isCheckedIn) {
         // Requirement 1: Strict Location Validation
         Position position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
         );
 
         double distance = Geolocator.distanceBetween(
@@ -233,15 +257,19 @@ class _AttendanceCardState extends State<AttendanceCard> {
           kOfficeLatitude,
           kOfficeLongitude,
         );
-        
-        AppLogger.log("CHECK-IN: Distance to office: ${distance.toStringAsFixed(0)}m");
+
+        AppLogger.log(
+          "CHECK-IN: Distance to office: ${distance.toStringAsFixed(0)}m",
+        );
 
         // STRICT GEOFENCE ENFORCEMENT
         if (distance > 100) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Check-in failed: You are not at the office location. (Distance: ${distance.toStringAsFixed(0)}m)'),
+                content: Text(
+                  'Check-in failed: You are not at the office location. (Distance: ${distance.toStringAsFixed(0)}m)',
+                ),
                 backgroundColor: Colors.red,
                 behavior: SnackBarBehavior.floating,
               ),
@@ -255,14 +283,14 @@ class _AttendanceCardState extends State<AttendanceCard> {
         final empId = prefs.getString('employee_id') ?? 'Unknown';
 
         final id = await DatabaseHelper.instance.checkIn(
-          timeString, 
-          dateString, 
-          position.latitude, 
+          timeString,
+          dateString,
+          position.latitude,
           position.longitude,
           empId,
-          type: 'Office'
+          type: 'Office',
         );
-        
+
         // Publish to MQTT using standardized function
         mqttService.publishAttendance(
           status: "Checked In",
@@ -271,12 +299,22 @@ class _AttendanceCardState extends State<AttendanceCard> {
           employeeId: empId,
         );
 
+        // Publish to Admin Attendance topic
+        mqttService.publishAdminAttendance(
+          employeeId: empId,
+          checkInTime: timeString,
+          date: dateString,
+        );
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Checked in at Office.'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('Checked in at Office.'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
-        
+
         setState(() {
           _isCheckedIn = true;
           _checkInTime = now;
@@ -285,32 +323,38 @@ class _AttendanceCardState extends State<AttendanceCard> {
         });
         _startTimer();
         _startGeofenceMonitoring(); // Start geofencing stream immediately
-        
+
         // Requirement 2: Schedule 5:30 PM reminder on Check-In
         _scheduleShiftEndReminder();
 
         if (widget.onActionComplete != null) widget.onActionComplete!();
-
       } else {
         // Requirement 2: Minimum Duration for "Present" Status
         if (_currentAttendanceId != null && _checkInTime != null) {
-          _positionStream?.cancel(); // STOP monitoring immediately on manual checkout
-          
+          _positionStream
+              ?.cancel(); // STOP monitoring immediately on manual checkout
+
           Duration worked = now.difference(_checkInTime!);
           // DATABASE LOGIC: Explicitly save strings
           String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
-          
-          await DatabaseHelper.instance.checkOut(timeString, _currentAttendanceId!, status: finalStatus);
-          
+
+          await DatabaseHelper.instance.checkOut(
+            timeString,
+            _currentAttendanceId!,
+            status: finalStatus,
+          );
+
           // Get current position for MQTT
           Position position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+            ),
           );
 
           // Publish to MQTT using standardized function
           final prefs = await SharedPreferences.getInstance();
           final empId = prefs.getString('employee_id') ?? 'Unknown';
-          
+
           mqttService.publishAttendance(
             status: finalStatus,
             lat: position.latitude,
@@ -326,22 +370,26 @@ class _AttendanceCardState extends State<AttendanceCard> {
           }
 
           _timer?.cancel();
-          
+
           setState(() {
             _isCheckedIn = false;
             _checkInTime = null;
             _currentAttendanceId = null;
             _duration = Duration.zero;
           });
-          
+
           if (widget.onActionComplete != null) widget.onActionComplete!();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(finalStatus == 'Present' 
-                  ? 'Shift Completed: Present' 
-                  : 'Checked out: Shift Incomplete (< 9hrs)'),
-                backgroundColor: finalStatus == 'Present' ? Colors.blue : Colors.orange,
+                content: Text(
+                  finalStatus == 'Present'
+                      ? 'Shift Completed: Present'
+                      : 'Checked out: Shift Incomplete (< 9hrs)',
+                ),
+                backgroundColor: finalStatus == 'Present'
+                    ? Colors.blue
+                    : Colors.orange,
               ),
             );
           }
@@ -380,7 +428,13 @@ class _AttendanceCardState extends State<AttendanceCard> {
               future: DatabaseHelper.instance.getUser(),
               builder: (context, snapshot) {
                 final name = snapshot.data?['name'] ?? 'Employee Name';
-                return Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18));
+                return Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                );
               },
             ),
             const Divider(height: 30),
@@ -402,11 +456,15 @@ class _AttendanceCardState extends State<AttendanceCard> {
               child: OutlinedButton(
                 onPressed: _handleCheckInOut,
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _isCheckedIn ? Colors.red : Colors.green),
+                  side: BorderSide(
+                    color: _isCheckedIn ? Colors.red : Colors.green,
+                  ),
                 ),
                 child: Text(
                   _isCheckedIn ? 'Check-out' : 'Check-in',
-                  style: TextStyle(color: _isCheckedIn ? Colors.red : Colors.green),
+                  style: TextStyle(
+                    color: _isCheckedIn ? Colors.red : Colors.green,
+                  ),
                 ),
               ),
             ),

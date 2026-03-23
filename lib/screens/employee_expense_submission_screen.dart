@@ -7,10 +7,12 @@ class EmployeeExpenseSubmissionScreen extends StatefulWidget {
   static const String id = 'employee_expense_submission';
 
   @override
-  State<EmployeeExpenseSubmissionScreen> createState() => _EmployeeExpenseSubmissionScreenState();
+  State<EmployeeExpenseSubmissionScreen> createState() =>
+      _EmployeeExpenseSubmissionScreenState();
 }
 
-class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmissionScreen> {
+class _EmployeeExpenseSubmissionScreenState
+    extends State<EmployeeExpenseSubmissionScreen> {
   // Category Selections
   bool _hasFood = false;
   bool _hasFuel = false;
@@ -62,7 +64,10 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
       if (expenses.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please select at least one expense category.'), backgroundColor: Colors.orange),
+            const SnackBar(
+              content: Text('Please select at least one expense category.'),
+              backgroundColor: Colors.orange,
+            ),
           );
         }
         setState(() => _isSubmitting = false);
@@ -75,16 +80,52 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
         expenses: expenses,
       );
 
+      // Publish to individual expense category topics
+      if (_hasFood) {
+        MqttHandler().publishFoodExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(_foodAmt.text) ?? 0.0,
+          description: _foodDesc.text,
+        );
+      }
+      if (_hasFuel) {
+        MqttHandler().publishFuelExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(_fuelAmt.text) ?? 0.0,
+          description: _fuelDesc.text,
+        );
+      }
+      if (_hasTravel) {
+        MqttHandler().publishTravelCategoryExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(_travelAmt.text) ?? 0.0,
+          description: _travelDesc.text,
+        );
+      }
+      if (_hasMaterial) {
+        MqttHandler().publishMaterialExpense(
+          employeeId: employeeId,
+          amount: double.tryParse(_materialAmt.text) ?? 0.0,
+          description: _materialDesc.text,
+        );
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expenses submitted for Admin approval'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Expenses submitted for Admin approval'),
+            backgroundColor: Colors.green,
+          ),
         );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error submitting expenses: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error submitting expenses: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -106,13 +147,37 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            _buildExpenseSection('Food Expenses', _hasFood, (val) => setState(() => _hasFood = val!), _foodDesc, _foodAmt),
+            _buildExpenseSection(
+              'Food Expenses',
+              _hasFood,
+              (val) => setState(() => _hasFood = val!),
+              _foodDesc,
+              _foodAmt,
+            ),
             const SizedBox(height: 20),
-            _buildExpenseSection('Fuel Expenses', _hasFuel, (val) => setState(() => _hasFuel = val!), _fuelDesc, _fuelAmt),
+            _buildExpenseSection(
+              'Fuel Expenses',
+              _hasFuel,
+              (val) => setState(() => _hasFuel = val!),
+              _fuelDesc,
+              _fuelAmt,
+            ),
             const SizedBox(height: 20),
-            _buildExpenseSection('Travel Expenses', _hasTravel, (val) => setState(() => _hasTravel = val!), _travelDesc, _travelAmt),
+            _buildExpenseSection(
+              'Travel Expenses',
+              _hasTravel,
+              (val) => setState(() => _hasTravel = val!),
+              _travelDesc,
+              _travelAmt,
+            ),
             const SizedBox(height: 20),
-            _buildExpenseSection('Material Expenses', _hasMaterial, (val) => setState(() => _hasMaterial = val!), _materialDesc, _materialAmt),
+            _buildExpenseSection(
+              'Material Expenses',
+              _hasMaterial,
+              (val) => setState(() => _hasMaterial = val!),
+              _materialDesc,
+              _materialAmt,
+            ),
             const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
@@ -122,19 +187,29 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  disabledBackgroundColor: theme.colorScheme.primary.withValues(alpha: 0.6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  disabledBackgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.6,
+                  ),
                 ),
-                child: _isSubmitting 
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.send),
-                        SizedBox(width: 8),
-                        Text('SUBMIT FOR APPROVAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
+                child: _isSubmitting
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.send),
+                          SizedBox(width: 8),
+                          Text(
+                            'SUBMIT FOR APPROVAL',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],
@@ -143,7 +218,13 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
     );
   }
 
-  Widget _buildExpenseSection(String title, bool isVisible, ValueChanged<bool?> onChanged, TextEditingController desc, TextEditingController amt) {
+  Widget _buildExpenseSection(
+    String title,
+    bool isVisible,
+    ValueChanged<bool?> onChanged,
+    TextEditingController desc,
+    TextEditingController amt,
+  ) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -154,8 +235,18 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Switch(value: isVisible, onChanged: onChanged, activeThumbColor: Theme.of(context).colorScheme.primary),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Switch(
+                  value: isVisible,
+                  onChanged: onChanged,
+                  activeThumbColor: Theme.of(context).colorScheme.primary,
+                ),
               ],
             ),
             if (isVisible) ...[
@@ -165,7 +256,9 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
                 decoration: InputDecoration(
                   labelText: 'Description',
                   hintText: 'Enter $title details',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 15),
@@ -175,10 +268,12 @@ class _EmployeeExpenseSubmissionScreenState extends State<EmployeeExpenseSubmiss
                 decoration: InputDecoration(
                   labelText: 'Amount (₹)',
                   prefixText: '₹ ',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-            ]
+            ],
           ],
         ),
       ),
