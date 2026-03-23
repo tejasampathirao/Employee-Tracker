@@ -28,6 +28,7 @@ class MqttHandler {
   // Admin Service Topics
   final String adminAttendanceTopic = 'admin/attendance';
   final String adminApprovalsTopic = 'admin/approvals';
+  final String adminEmployeeDetailsTopic = 'admin/employee/details';
 
   // Expense Category Topics
   final String expenseFoodTopic = 'employee/tracker/expenses/food';
@@ -342,7 +343,42 @@ class MqttHandler {
     publish(adminApprovalsTopic, jsonString);
   }
 
-  /// Publishes food expense data
+  /// Publishes employee details when admin saves/updates employee data
+  void publishEmployeeDetails({
+    required String empId,
+    required String name,
+    required String role,
+    String? panNo,
+    String? aadharNo,
+    String? bankAccNo,
+    String? ifscCode,
+    String? fatherName,
+    String? motherName,
+    double? salary,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "employee_details",
+      "request_id": _uuid.v4(),
+      "emp_id": empId,
+      "name": name,
+      "role": role,
+      "pan_no": panNo ?? '',
+      "aadhar_no": aadharNo ?? '',
+      "bank_acc_no": bankAccNo ?? '',
+      "ifsc_code": ifscCode ?? '',
+      "father_name": fatherName ?? '',
+      "mother_name": motherName ?? '',
+      "salary": salary ?? 0.0,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log(
+      'MQTT DEBUG [Employee Details]: Sending Payload: $jsonString',
+    );
+    publish(adminEmployeeDetailsTopic, jsonString);
+  }
+
   void publishFoodExpense({
     required String employeeId,
     required double amount,

@@ -5,6 +5,7 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../database/db_helper.dart';
+import '../services/mqtt_handler.dart';
 
 class EmployeeEditScreen extends StatefulWidget {
   final Map<String, dynamic>? employee;
@@ -26,7 +27,7 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
   final _fatherNameController = TextEditingController();
   final _motherNameController = TextEditingController();
   final _salaryController = TextEditingController();
-  
+
   String _selectedRole = 'Employee';
   File? _imageFile;
   bool _isLoading = false;
@@ -90,9 +91,25 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
       // 2. Save/Update in Excel
       await _updateExcel(employeeData);
 
+      // 3. Publish employee details via MQTT
+      MqttHandler().publishEmployeeDetails(
+        empId: _empIdController.text.trim(),
+        name: _nameController.text,
+        role: _selectedRole,
+        panNo: _panController.text,
+        aadharNo: _aadharController.text,
+        bankAccNo: _bankAccController.text,
+        ifscCode: _ifscController.text,
+        fatherName: _fatherNameController.text,
+        motherName: _motherNameController.text,
+        salary: double.tryParse(_salaryController.text) ?? 0.0,
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Employee Data & Excel updated successfully!')),
+          const SnackBar(
+            content: Text('Employee Data & Excel updated successfully!'),
+          ),
         );
         Navigator.pop(context);
       }
@@ -110,7 +127,7 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
   Future<void> _updateExcel(Map<String, dynamic> data) async {
     const String fileName = "Employee_Database.xlsx";
     const String sheetName = "EmployeeDetails";
-    
+
     final directory = await getApplicationDocumentsDirectory();
     final path = p.join(directory.path, fileName);
     final file = File(path);
@@ -127,19 +144,31 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
     }
 
     Sheet sheet = excel[sheetName];
-    
+
     if (sheet.maxRows == 0) {
-      sheet.appendRow([
-        'Emp ID', 'Name', 'Role', 'PAN No', 'Aadhar No', 'Bank Acc No', 
-        'IFSC Code', 'Father Name', 'Mother Name', 'Salary'
-      ].map((e) => TextCellValue(e)).toList());
+      sheet.appendRow(
+        [
+          'Emp ID',
+          'Name',
+          'Role',
+          'PAN No',
+          'Aadhar No',
+          'Bank Acc No',
+          'IFSC Code',
+          'Father Name',
+          'Mother Name',
+          'Salary',
+        ].map((e) => TextCellValue(e)).toList(),
+      );
     }
 
     final String empId = data['emp_id'].toString();
     int? targetRowIndex;
 
     for (int i = 0; i < sheet.maxRows; i++) {
-      var cellValue = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i)).value;
+      var cellValue = sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i))
+          .value;
       if (cellValue?.toString() == empId) {
         targetRowIndex = i;
         break;
@@ -161,7 +190,15 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
 
     if (targetRowIndex != null) {
       for (int i = 0; i < rowData.length; i++) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: targetRowIndex)).value = rowData[i];
+        sheet
+                .cell(
+                  CellIndex.indexByColumnRow(
+                    columnIndex: i,
+                    rowIndex: targetRowIndex,
+                  ),
+                )
+                .value =
+            rowData[i];
       }
     } else {
       sheet.appendRow(rowData);
@@ -183,55 +220,96 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  _buildPhotoPicker(),
-                  const SizedBox(height: 30),
-                  _buildTextField(_empIdController, 'Employee ID (e.g., AMP-001)', Icons.badge_outlined, isNumber: false, isEnabled: widget.employee == null),
-                  const SizedBox(height: 15),
-                  _buildTextField(_nameController, 'Full Name', Icons.person),
-                  const SizedBox(height: 15),
-                  _buildRoleDropdown(),
-                  const SizedBox(height: 15),
-                  _buildTextField(_panController, 'PAN Card No', Icons.credit_card),
-                  const SizedBox(height: 15),
-                  _buildTextField(_aadharController, 'Aadhar Card No', Icons.badge_outlined, isNumber: true),
-                  const SizedBox(height: 15),
-                  _buildTextField(_bankAccController, 'Bank Account No', Icons.account_balance_wallet, isNumber: true),
-                  const SizedBox(height: 15),
-                  _buildTextField(_ifscController, 'IFSC Code', Icons.code),
-                  const SizedBox(height: 15),
-                  _buildTextField(_fatherNameController, 'Father Name', Icons.family_restroom),
-                  const SizedBox(height: 15),
-                  _buildTextField(_motherNameController, 'Mother Name', Icons.family_restroom_outlined),
-                  const SizedBox(height: 15),
-                  _buildTextField(_salaryController, 'Salary', Icons.payments, isNumber: true),
-                  const SizedBox(height: 40),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton.icon(
-                      onPressed: _saveData,
-                      icon: const Icon(Icons.save),
-                      label: const Text('SAVE DATA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    _buildPhotoPicker(),
+                    const SizedBox(height: 30),
+                    _buildTextField(
+                      _empIdController,
+                      'Employee ID (e.g., AMP-001)',
+                      Icons.badge_outlined,
+                      isNumber: false,
+                      isEnabled: widget.employee == null,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(_nameController, 'Full Name', Icons.person),
+                    const SizedBox(height: 15),
+                    _buildRoleDropdown(),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _panController,
+                      'PAN Card No',
+                      Icons.credit_card,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _aadharController,
+                      'Aadhar Card No',
+                      Icons.badge_outlined,
+                      isNumber: true,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _bankAccController,
+                      'Bank Account No',
+                      Icons.account_balance_wallet,
+                      isNumber: true,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(_ifscController, 'IFSC Code', Icons.code),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _fatherNameController,
+                      'Father Name',
+                      Icons.family_restroom,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _motherNameController,
+                      'Mother Name',
+                      Icons.family_restroom_outlined,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      _salaryController,
+                      'Salary',
+                      Icons.payments,
+                      isNumber: true,
+                    ),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton.icon(
+                        onPressed: _saveData,
+                        icon: const Icon(Icons.save),
+                        label: const Text(
+                          'SAVE DATA',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 30),
-                ],
+                    const SizedBox(height: 30),
+                  ],
+                ),
               ),
             ),
-          ),
     );
   }
 
@@ -247,13 +325,16 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
               color: Colors.grey[200],
               shape: BoxShape.circle,
               border: Border.all(color: Colors.blue[800]!, width: 2),
-              image: _imageFile != null 
-                ? DecorationImage(image: FileImage(_imageFile!), fit: BoxFit.cover)
-                : null,
+              image: _imageFile != null
+                  ? DecorationImage(
+                      image: FileImage(_imageFile!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
-            child: _imageFile == null 
-              ? Icon(Icons.person, size: 60, color: Colors.grey[400])
-              : null,
+            child: _imageFile == null
+                ? Icon(Icons.person, size: 60, color: Colors.grey[400])
+                : null,
           ),
         ),
         const SizedBox(height: 10),
@@ -266,12 +347,19 @@ class _EmployeeEditScreenState extends State<EmployeeEditScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isEnabled = true}) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool isNumber = false,
+    bool isEnabled = true,
+  }) {
     return TextFormField(
       controller: controller,
       enabled: isEnabled,
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      validator: (value) => value == null || value.isEmpty ? 'This field is required' : null,
+      validator: (value) =>
+          value == null || value.isEmpty ? 'This field is required' : null,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: Colors.blue[800]),
