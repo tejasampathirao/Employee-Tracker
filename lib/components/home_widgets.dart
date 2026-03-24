@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
+import '../screens/welcome_screen.dart';
+import '../screens/holiday_calendar_screen.dart';
 import 'attendance_card.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
@@ -45,7 +47,6 @@ Widget getDrawerWidget(
   }
 }
 
-
 // --- HOME VIEW (DASHBOARD) ---
 class RealTimeTimeLogs extends StatefulWidget {
   const RealTimeTimeLogs({super.key});
@@ -78,17 +79,20 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
       if (mounted) {
         setState(() {
           _stats = stats;
-          if (lastAttendance != null && lastAttendance['checkOutTime'] == null) {
+          if (lastAttendance != null &&
+              lastAttendance['checkOutTime'] == null) {
             final checkInTime = DateTime.parse(lastAttendance['checkInTime']);
             final now = DateTime.now();
 
             // SAME DAY RULE: If check-in is NOT from today, it's a stale session
-            if (checkInTime.day == now.day && 
-                checkInTime.month == now.month && 
+            if (checkInTime.day == now.day &&
+                checkInTime.month == now.month &&
                 checkInTime.year == now.year) {
               _checkInTime = checkInTime;
             } else {
-              AppLogger.log("STALE SESSION: Dashboard ignoring previous day's check-in: ${lastAttendance['checkInTime']}");
+              AppLogger.log(
+                "STALE SESSION: Dashboard ignoring previous day's check-in: ${lastAttendance['checkInTime']}",
+              );
               _checkInTime = null;
             }
           }
@@ -136,8 +140,16 @@ class _RealTimeTimeLogsState extends State<RealTimeTimeLogs> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildStatItem('Today', _format(totalToday), Icons.today),
-          _buildStatItem('This Week', _format(_stats['week']! + activeHours), Icons.calendar_view_week),
-          _buildStatItem('This Month', _format(_stats['month']! + activeHours), Icons.calendar_month),
+          _buildStatItem(
+            'This Week',
+            _format(_stats['week']! + activeHours),
+            Icons.calendar_view_week,
+          ),
+          _buildStatItem(
+            'This Month',
+            _format(_stats['month']! + activeHours),
+            Icons.calendar_month,
+          ),
         ],
       ),
     );
@@ -160,11 +172,12 @@ Widget homeListView(
         const SizedBox(height: 20),
         _buildGreetingSection(),
         const SizedBox(height: 20),
-        AttendanceCard(
-          onActionComplete: () => updateState(),
-        ),
+        AttendanceCard(onActionComplete: () => updateState()),
         const SizedBox(height: 24),
-        _buildDashboardSectionTitle('Additional Expenses', Icons.fact_check_outlined),
+        _buildDashboardSectionTitle(
+          'Additional Expenses',
+          Icons.fact_check_outlined,
+        ),
         const SizedBox(height: 12),
         _buildExpenseApprovalsList(),
         const SizedBox(height: 24),
@@ -176,9 +189,14 @@ Widget homeListView(
   );
 }
 
-
 Widget _buildHeader(MqttHandler mqttClient, Function updateState) {
-  final List<String> hrTopics = ['/attendance/live', '/leave/updates', '/payroll/status', '/expenses/updates', 'hr/leaves'];
+  final List<String> hrTopics = [
+    '/attendance/live',
+    '/leave/updates',
+    '/payroll/status',
+    '/expenses/updates',
+    'hr/leaves',
+  ];
   return Row(
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
@@ -191,18 +209,22 @@ Widget _buildHeader(MqttHandler mqttClient, Function updateState) {
   );
 }
 
-
 Widget _buildGreetingSection() {
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
-      final String name = snapshot.data?['name']?.toString() ?? 'Srinivas Reddy';
+      final String name =
+          snapshot.data?['name']?.toString() ?? 'Srinivas Reddy';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Hi, $name 👋',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.blueGrey[800]),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Colors.blueGrey[800],
+            ),
           ),
           const Text(
             'Here\'s what\'s happening today.',
@@ -210,7 +232,7 @@ Widget _buildGreetingSection() {
           ),
         ],
       );
-    }
+    },
   );
 }
 
@@ -262,12 +284,30 @@ Widget _buildExpenseApprovalsList() {
           return _buildAnimatedCard(
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey[200]!),
+              ),
               child: ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.description, color: Colors.blue)),
-                title: Text(item['category'] ?? 'Expense', style: const TextStyle(fontWeight: FontWeight.w500)),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blue[50],
+                  child: const Icon(Icons.description, color: Colors.blue),
+                ),
+                title: Text(
+                  item['category'] ?? 'Expense',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
                 subtitle: Text('${item['description']} • ₹${item['amount']}'),
-                trailing: Text(item['status'], style: TextStyle(color: item['status'] == 'Pending' ? Colors.orange : Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                trailing: Text(
+                  item['status'],
+                  style: TextStyle(
+                    color: item['status'] == 'Pending'
+                        ? Colors.orange
+                        : Colors.green,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ),
           );
@@ -282,12 +322,14 @@ Widget _buildStatItem(String label, String value, IconData icon) {
     children: [
       Icon(icon, color: Colors.blue, size: 24),
       const SizedBox(height: 8),
-      Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      Text(
+        value,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
       Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
     ],
   );
 }
-
 
 Widget _buildEmptyState(String message) {
   return Center(
@@ -305,15 +347,60 @@ Widget _buildEmptyState(String message) {
 }
 
 // --- SERVICES VIEW ---
-Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updateState) {
+Widget servicesView(
+  BuildContext context,
+  MqttHandler mqttClient,
+  Function updateState,
+) {
   final List<Map<String, dynamic>> services = [
-    {'title': 'Attendance', 'icon': Icons.location_on, 'color': Colors.green, 'desc': 'Check-in and history'},
-    {'title': 'Work', 'icon': Icons.work, 'color': Colors.indigo, 'desc': 'Log daily work and meetings'},
-    {'title': 'Time Tracker', 'icon': Icons.timer, 'color': Colors.orange, 'desc': 'Log your work hours'},
-    {'title': 'Travel Expenses', 'icon': Icons.directions_car, 'color': Colors.teal, 'desc': 'Onsite and Office logs'},
-    {'title': 'Travel Attendance', 'icon': Icons.transfer_within_a_station, 'color': Colors.deepOrange, 'desc': '10km geofenced attendance'},
-    {'title': 'Daily Expenses', 'icon': Icons.receipt_long, 'color': Colors.blueAccent, 'desc': 'Submit food, fuel, etc.'},
-    {'title': 'Additional Expenses', 'icon': Icons.done_all, 'color': Colors.purple, 'desc': 'Manage your requests'},
+    {
+      'title': 'Attendance',
+      'icon': Icons.location_on,
+      'color': Colors.green,
+      'desc': 'Check-in and history',
+    },
+    {
+      'title': 'Work',
+      'icon': Icons.work,
+      'color': Colors.indigo,
+      'desc': 'Log daily work and meetings',
+    },
+    {
+      'title': 'Time Tracker',
+      'icon': Icons.timer,
+      'color': Colors.orange,
+      'desc': 'Log your work hours',
+    },
+    {
+      'title': 'Travel Expenses',
+      'icon': Icons.directions_car,
+      'color': Colors.teal,
+      'desc': 'Onsite and Office logs',
+    },
+    {
+      'title': 'Travel Attendance',
+      'icon': Icons.transfer_within_a_station,
+      'color': Colors.deepOrange,
+      'desc': '10km geofenced attendance',
+    },
+    {
+      'title': 'Daily Expenses',
+      'icon': Icons.receipt_long,
+      'color': Colors.blueAccent,
+      'desc': 'Submit food, fuel, etc.',
+    },
+    {
+      'title': 'Additional Expenses',
+      'icon': Icons.done_all,
+      'color': Colors.purple,
+      'desc': 'Manage your requests',
+    },
+    {
+      'title': 'Holiday Calendar',
+      'icon': Icons.celebration,
+      'color': Colors.deepOrange,
+      'desc': 'Company holidays list',
+    },
   ];
 
   return Scaffold(
@@ -323,7 +410,10 @@ Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('HR Services', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const Text(
+            'HR Services',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 20),
           GridView.builder(
             shrinkWrap: true,
@@ -332,12 +422,18 @@ Widget servicesView(BuildContext context, MqttHandler mqttClient, Function updat
               crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 0.85, // Adjusted from 0.9 to give more vertical space
+              childAspectRatio:
+                  0.85, // Adjusted from 0.9 to give more vertical space
             ),
             itemCount: services.length,
             itemBuilder: (context, index) {
               final service = services[index];
-              return _buildServiceCard(context, service, mqttClient, updateState);
+              return _buildServiceCard(
+                context,
+                service,
+                mqttClient,
+                updateState,
+              );
             },
           ),
         ],
@@ -375,7 +471,11 @@ Color _buildAttendanceStatusColor(DateTime day, String? status) {
   }
 }
 
-void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Function updateState) {
+void _showAttendanceService(
+  BuildContext context,
+  MqttHandler mqttClient,
+  Function updateState,
+) {
   final now = DateTime.now();
   final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
   final firstDayOffset = DateTime(now.year, now.month, 1).weekday % 7;
@@ -383,7 +483,9 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => Container(
       height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.all(20),
@@ -402,12 +504,16 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
               children: [
                 Expanded(
                   child: Text(
-                    'Attendance: ${DateFormat('MMMM yyyy').format(now)}', 
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)
+                    'Attendance: ${DateFormat('MMMM yyyy').format(now)}',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () => _showLeaveService(context, mqttClient, updateState),
+                  onPressed: () =>
+                      _showLeaveService(context, mqttClient, updateState),
                   icon: const Icon(Icons.calendar_today, size: 16),
                   label: const Text('Manage Leaves'),
                   style: ElevatedButton.styleFrom(
@@ -423,12 +529,15 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
             FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
               builder: (context, snapshot) {
-                if (snapshot.hasError) return _buildEmptyState('Error loading stats');
+                if (snapshot.hasError)
+                  return _buildEmptyState('Error loading stats');
                 if (!snapshot.hasData) return const SizedBox.shrink();
 
                 final currentMonthStr = DateFormat('yyyy-MM').format(now);
-                final monthlyData = snapshot.data!.where((e) => e['date'].startsWith(currentMonthStr)).toList();
-                
+                final monthlyData = snapshot.data!
+                    .where((e) => e['date'].startsWith(currentMonthStr))
+                    .toList();
+
                 // Requirement 1: Day-Based Processing (Unique Dates)
                 Map<String, String> dailyStatus = {};
                 for (var log in monthlyData) {
@@ -441,9 +550,13 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                   dailyStatus[date] = status;
                 }
 
-                int daysPresent = dailyStatus.values.where((v) => v == 'Present').length;
-                int daysIncomplete = dailyStatus.values.where((v) => v == 'Incomplete' || v == 'Active').length;
-                
+                int daysPresent = dailyStatus.values
+                    .where((v) => v == 'Present')
+                    .length;
+                int daysIncomplete = dailyStatus.values
+                    .where((v) => v == 'Incomplete' || v == 'Active')
+                    .length;
+
                 // Filter out weekends from total days for accurate absent count
                 int totalDaysPassed = 0;
                 for (int i = 1; i <= now.day; i++) {
@@ -452,11 +565,13 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                     totalDaysPassed++;
                   }
                 }
-                
-                int daysAbsent = totalDaysPassed - (daysPresent + daysIncomplete);
+
+                int daysAbsent =
+                    totalDaysPassed - (daysPresent + daysIncomplete);
                 if (daysAbsent < 0) daysAbsent = 0;
 
-                double total = (daysPresent + daysIncomplete + daysAbsent).toDouble();
+                double total = (daysPresent + daysIncomplete + daysAbsent)
+                    .toDouble();
                 if (total == 0) total = 1;
 
                 return Column(
@@ -471,23 +586,38 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                             PieChartSectionData(
                               color: Colors.green,
                               value: daysPresent.toDouble(),
-                              title: '${((daysPresent/total)*100).toStringAsFixed(0)}%',
+                              title:
+                                  '${((daysPresent / total) * 100).toStringAsFixed(0)}%',
                               radius: 50,
-                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                              titleStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                             PieChartSectionData(
                               color: Colors.orange,
                               value: daysIncomplete.toDouble(),
-                              title: '${((daysIncomplete/total)*100).toStringAsFixed(0)}%',
+                              title:
+                                  '${((daysIncomplete / total) * 100).toStringAsFixed(0)}%',
                               radius: 50,
-                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                              titleStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                             PieChartSectionData(
                               color: Colors.red,
                               value: daysAbsent.toDouble(),
-                              title: '${((daysAbsent/total)*100).toStringAsFixed(0)}%',
+                              title:
+                                  '${((daysAbsent / total) * 100).toStringAsFixed(0)}%',
                               radius: 50,
-                              titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                              titleStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                           ],
                         ),
@@ -497,11 +627,20 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _LegendItem(color: Colors.green, label: 'Present: $daysPresent'),
+                        _LegendItem(
+                          color: Colors.green,
+                          label: 'Present: $daysPresent',
+                        ),
                         const SizedBox(width: 10),
-                        _LegendItem(color: Colors.orange, label: 'Incomplete: $daysIncomplete'),
+                        _LegendItem(
+                          color: Colors.orange,
+                          label: 'Incomplete: $daysIncomplete',
+                        ),
                         const SizedBox(width: 10),
-                        _LegendItem(color: Colors.red, label: 'Absent: $daysAbsent'),
+                        _LegendItem(
+                          color: Colors.red,
+                          label: 'Absent: $daysAbsent',
+                        ),
                         const SizedBox(width: 10),
                         _LegendItem(color: Colors.black, label: 'Weekend'),
                       ],
@@ -514,12 +653,15 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
             FutureBuilder<List<Map<String, dynamic>>>(
               future: DatabaseHelper.instance.getAllAttendance(),
               builder: (context, snapshot) {
-                if (snapshot.hasError) return _buildEmptyState('Error loading calendar');
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                
+                if (snapshot.hasError)
+                  return _buildEmptyState('Error loading calendar');
+                if (!snapshot.hasData)
+                  return const Center(child: CircularProgressIndicator());
+
                 final statusMap = {
-                  for (var e in snapshot.data!) 
-                    DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date'])): (e['checkOutTime'] == null ? 'Active' : e['status'])
+                  for (var e in snapshot.data!)
+                    DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date'])):
+                        (e['checkOutTime'] == null ? 'Active' : e['status']),
                 };
 
                 return GridView.builder(
@@ -533,28 +675,33 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                   itemCount: daysInMonth + firstDayOffset,
                   itemBuilder: (context, index) {
                     if (index < firstDayOffset) return const SizedBox();
-                    
+
                     final day = index - firstDayOffset + 1;
                     final date = DateTime(now.year, now.month, day);
                     final dateStr = DateFormat('yyyy-MM-dd').format(date);
                     final status = statusMap[dateStr];
-                    final isToday = date.day == now.day && date.month == now.month && date.year == now.year;
+                    final isToday =
+                        date.day == now.day &&
+                        date.month == now.month &&
+                        date.year == now.year;
                     final isFuture = date.isAfter(DateTime.now());
 
                     return Container(
                       decoration: BoxDecoration(
                         color: _buildAttendanceStatusColor(date, status),
                         borderRadius: BorderRadius.circular(8),
-                        border: isToday ? Border.all(color: Colors.blue, width: 2) : null,
+                        border: isToday
+                            ? Border.all(color: Colors.blue, width: 2)
+                            : null,
                       ),
                       child: Center(
                         child: Text(
                           '$day',
                           style: TextStyle(
-                            color: (date.weekday == DateTime.sunday || isFuture) 
-                                ? Colors.grey[600] 
+                            color: (date.weekday == DateTime.sunday || isFuture)
+                                ? Colors.grey[600]
                                 : Colors.white,
-                            fontWeight: FontWeight.bold
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
@@ -570,7 +717,11 @@ void _showAttendanceService(BuildContext context, MqttHandler mqttClient, Functi
                 children: [
                   _LegendItem(color: Colors.green, label: 'Present'),
                   _LegendItem(color: Colors.orange, label: 'Incomplete'),
-                  _LegendItem(color: Colors.blue, label: 'Today', isBorder: true),
+                  _LegendItem(
+                    color: Colors.blue,
+                    label: 'Today',
+                    isBorder: true,
+                  ),
                 ],
               ),
             ),
@@ -587,14 +738,19 @@ class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
   final bool isBorder;
-  const _LegendItem({required this.color, required this.label, this.isBorder = false});
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    this.isBorder = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Container(
-          width: 16, height: 16,
+          width: 16,
+          height: 16,
           decoration: BoxDecoration(
             color: isBorder ? Colors.transparent : color,
             borderRadius: BorderRadius.circular(4),
@@ -611,19 +767,27 @@ class _LegendItem extends StatelessWidget {
 void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
   final TextEditingController descController = TextEditingController();
   final TextEditingController amtController = TextEditingController();
-  final TextEditingController priceController = TextEditingController(text: "103");
-  final TextEditingController mileageController = TextEditingController(text: "35");
+  final TextEditingController priceController = TextEditingController(
+    text: "103",
+  );
+  final TextEditingController mileageController = TextEditingController(
+    text: "35",
+  );
   LatLng? selectedLatLng;
   String visitType = 'Onsite';
 
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => StatefulBuilder(
       builder: (context, setModalState) {
         return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
           child: Container(
             padding: const EdgeInsets.all(24),
             child: SingleChildScrollView(
@@ -637,11 +801,20 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.arrow_back_ios, size: 20),
                       ),
-                      const Text('Travel Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Travel Expenses',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  const Text('Visit Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    'Visit Type',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                   RadioGroup<String>(
                     groupValue: visitType,
                     onChanged: (val) => setModalState(() => visitType = val!),
@@ -649,14 +822,20 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                       children: [
                         Expanded(
                           child: RadioListTile<String>(
-                            title: const Text('Onsite 🏭', style: TextStyle(fontSize: 14)),
+                            title: const Text(
+                              'Onsite 🏭',
+                              style: TextStyle(fontSize: 14),
+                            ),
                             value: 'Onsite',
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
                         Expanded(
                           child: RadioListTile<String>(
-                            title: const Text('Office 🏢', style: TextStyle(fontSize: 14)),
+                            title: const Text(
+                              'Office 🏢',
+                              style: TextStyle(fontSize: 14),
+                            ),
                             value: 'Office',
                             contentPadding: EdgeInsets.zero,
                           ),
@@ -671,13 +850,19 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         child: TextField(
                           controller: priceController,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Fuel Price (₹/L)', border: OutlineInputBorder()),
+                          decoration: const InputDecoration(
+                            labelText: 'Fuel Price (₹/L)',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
-                          decoration: const InputDecoration(labelText: 'Vehicle/Type', border: OutlineInputBorder()),
+                          decoration: const InputDecoration(
+                            labelText: 'Vehicle/Type',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
                       ),
                     ],
@@ -685,13 +870,20 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                   const SizedBox(height: 16),
                   TextField(
                     controller: mileageController,
-                    readOnly: true, // Making it read-only since it's auto-populated with distance
-                    decoration: const InputDecoration(labelText: 'Calculated Distance (km)', border: OutlineInputBorder()),
+                    readOnly:
+                        true, // Making it read-only since it's auto-populated with distance
+                    decoration: const InputDecoration(
+                      labelText: 'Calculated Distance (km)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: descController,
-                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -702,20 +894,29 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                             // Show a loading snackbar or indicator if needed
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Fetching onsite coordinates...'), duration: Duration(seconds: 1)),
+                                const SnackBar(
+                                  content: Text(
+                                    'Fetching onsite coordinates...',
+                                  ),
+                                  duration: Duration(seconds: 1),
+                                ),
                               );
                             }
 
                             try {
                               // Fetch Current Position in Background (No Map UI)
-                              Position pos = await Geolocator.getCurrentPosition(
-                                locationSettings: const LocationSettings(
-                                  accuracy: LocationAccuracy.high,
-                                ),
+                              Position pos =
+                                  await Geolocator.getCurrentPosition(
+                                    locationSettings: const LocationSettings(
+                                      accuracy: LocationAccuracy.high,
+                                    ),
+                                  );
+
+                              LatLng onsiteLatLng = LatLng(
+                                pos.latitude,
+                                pos.longitude,
                               );
-                              
-                              LatLng onsiteLatLng = LatLng(pos.latitude, pos.longitude);
-                              
+
                               setModalState(() {
                                 selectedLatLng = onsiteLatLng;
                               });
@@ -728,14 +929,20 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                                 amtController,
                                 (msg) {
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(msg)),
+                                    );
                                   }
                                 },
                               );
                             } catch (e) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Error fetching location: $e')),
+                                  SnackBar(
+                                    content: Text(
+                                      'Error fetching location: $e',
+                                    ),
+                                  ),
                                 );
                               }
                             }
@@ -763,12 +970,20 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            const Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                              size: 20,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 'Onsite Location Captured: ${selectedLatLng!.latitude.toStringAsFixed(4)}, ${selectedLatLng!.longitude.toStringAsFixed(4)}',
-                                style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -779,7 +994,11 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                   TextField(
                     controller: amtController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ ', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '₹ ',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
@@ -787,13 +1006,24 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () async {
-                        if (descController.text.isEmpty || amtController.text.isEmpty || selectedLatLng == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields and pick a destination')));
+                        if (descController.text.isEmpty ||
+                            amtController.text.isEmpty ||
+                            selectedLatLng == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Please fill all fields and pick a destination',
+                              ),
+                            ),
+                          );
                           return;
                         }
 
-                        final amount = double.parse((double.tryParse(amtController.text) ?? 0.0).toStringAsFixed(2));
-                        
+                        final amount = double.parse(
+                          (double.tryParse(amtController.text) ?? 0.0)
+                              .toStringAsFixed(2),
+                        );
+
                         // REQUIREMENT: Strictly use hardcoded office coordinates as the Source
                         const double srcLat = kOfficeLatitude;
                         const double srcLng = kOfficeLongitude;
@@ -813,11 +1043,16 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                         };
 
                         await DatabaseHelper.instance.insertExpense(expense);
-                        
+
                         // Calculate Road Distance (Km) between Office and Destination using 1.42 factor
                         double straightLineMeters = Geolocator.distanceBetween(
-                          srcLat, srcLng, selectedLatLng!.latitude, selectedLatLng!.longitude);
-                        double roadDistanceKm = (straightLineMeters * 1.42) / 1000;
+                          srcLat,
+                          srcLng,
+                          selectedLatLng!.latitude,
+                          selectedLatLng!.longitude,
+                        );
+                        double roadDistanceKm =
+                            (straightLineMeters * 1.42) / 1000;
 
                         // Fetch user info for MQTT payload
                         final user = await DatabaseHelper.instance.getUser();
@@ -832,17 +1067,29 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           srcLng: srcLng,
                           destLat: selectedLatLng!.latitude,
                           destLng: selectedLatLng!.longitude,
-                          distanceKm: double.parse(roadDistanceKm.toStringAsFixed(2)),
+                          distanceKm: double.parse(
+                            roadDistanceKm.toStringAsFixed(2),
+                          ),
                           employeeId: employeeId,
                         );
 
                         // NEW: Export to Excel
                         final excelPath = await ExcelExportHelper.appendToExcel(
                           sheetName: "Travel Logs",
-                          headers: ["Employee Name", "Date", "Service Type", "Visit Type", "Distance (km)", "Amount (₹)", "Description"],
+                          headers: [
+                            "Employee Name",
+                            "Date",
+                            "Service Type",
+                            "Visit Type",
+                            "Distance (km)",
+                            "Amount (₹)",
+                            "Description",
+                          ],
                           rowData: [
                             employeeId,
-                            DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+                            DateFormat(
+                              'yyyy-MM-dd HH:mm',
+                            ).format(DateTime.now()),
                             "Travel Expense",
                             visitType,
                             roadDistanceKm.toStringAsFixed(2),
@@ -855,15 +1102,28 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Travel Expense Logged & Saved to Excel!\nPath: $excelPath'),
+                              content: Text(
+                                'Travel Expense Logged & Saved to Excel!\nPath: $excelPath',
+                              ),
                               duration: const Duration(seconds: 5),
-                              action: SnackBarAction(label: 'OK', onPressed: () {}),
+                              action: SnackBarAction(
+                                label: 'OK',
+                                onPressed: () {},
+                              ),
                             ),
                           );
                         }
                       },
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: const Text('Submit Travel Log', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Submit Travel Log',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
                     ),
                   ),
                 ],
@@ -883,9 +1143,13 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SingleChildScrollView(
         child: Container(
           padding: const EdgeInsets.all(24),
@@ -899,7 +1163,10 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios, size: 20),
                   ),
-                  const Text('Daily Work Log', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Daily Work Log',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -927,9 +1194,10 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: () async {
-                    if (descController.text.isEmpty || typeController.text.isEmpty) {
+                    if (descController.text.isEmpty ||
+                        typeController.text.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please fill all fields'))
+                        const SnackBar(content: Text('Please fill all fields')),
                       );
                       return;
                     }
@@ -939,7 +1207,7 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                     // MQTT Publishing Only
                     final user = await DatabaseHelper.instance.getUser();
                     final String employeeId = user?['name'] ?? 'Teja';
-                    
+
                     mqttClient.publishDailyWorkLog(
                       description: descController.text,
                       workType: typeController.text,
@@ -949,7 +1217,13 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                     // NEW: Export to Excel
                     final excelPath = await ExcelExportHelper.appendToExcel(
                       sheetName: "Daily Work Logs",
-                      headers: ["Employee Name", "Date", "Service Type", "Work Type", "Description"],
+                      headers: [
+                        "Employee Name",
+                        "Date",
+                        "Service Type",
+                        "Work Type",
+                        "Description",
+                      ],
                       rowData: [
                         employeeId,
                         DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
@@ -963,18 +1237,25 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Work details published & Saved to Excel!\nPath: $excelPath'),
+                          content: Text(
+                            'Work details published & Saved to Excel!\nPath: $excelPath',
+                          ),
                           backgroundColor: Colors.green,
                           duration: const Duration(seconds: 5),
-                        )
+                        ),
                       );
                     }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.indigo,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Submit', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  child: const Text(
+                    'Submit',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
                 ),
               ),
             ],
@@ -1009,8 +1290,11 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
   );
 
   if (picked != null) {
-    final String total = await DatabaseHelper.instance.calculateHoursInRange(picked.start, picked.end);
-    
+    final String total = await DatabaseHelper.instance.calculateHoursInRange(
+      picked.start,
+      picked.end,
+    );
+
     // Fetch user info for MQTT payload
     final user = await DatabaseHelper.instance.getUser();
     final String employeeId = user?['name'] ?? 'Teja';
@@ -1022,11 +1306,18 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
       toDate: DateFormat('yyyy-MM-dd').format(picked.end),
       totalWorked: total,
     );
-    
+
     // NEW: Export to Excel
     final excelPath = await ExcelExportHelper.appendToExcel(
       sheetName: "Work Logs",
-      headers: ["Employee Name", "Date Generated", "Service Type", "From Date", "To Date", "Total Worked"],
+      headers: [
+        "Employee Name",
+        "Date Generated",
+        "Service Type",
+        "From Date",
+        "To Date",
+        "Total Worked",
+      ],
       rowData: [
         employeeId,
         DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
@@ -1041,7 +1332,9 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Row(
             children: [
               Icon(Icons.analytics, color: Colors.blue),
@@ -1053,7 +1346,10 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Period:', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              Text(
+                'Period:',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
               Text(
                 '${DateFormat('MMM dd, yyyy').format(picked.start)} - ${DateFormat('MMM dd, yyyy').format(picked.end)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1064,15 +1360,25 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
               const Text('Total Worked:', style: TextStyle(fontSize: 14)),
               Text(
                 total,
-                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
               ),
               const SizedBox(height: 10),
               const Divider(),
               const SizedBox(height: 10),
-              Text('Excel Saved To:', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+              Text(
+                'Excel Saved To:',
+                style: TextStyle(color: Colors.grey[600], fontSize: 11),
+              ),
               Text(
                 excelPath,
-                style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ),
@@ -1092,9 +1398,13 @@ void _showTimeTrackerService(BuildContext context, MqttHandler mqttClient) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SingleChildScrollView(
         child: Container(
           padding: const EdgeInsets.all(20),
@@ -1109,25 +1419,33 @@ void _showTimeTrackerService(BuildContext context, MqttHandler mqttClient) {
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios, size: 20),
                   ),
-                  const Text('Time Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Time Tracker',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(width: 40), // Balance the back button
                 ],
               ),
               const SizedBox(height: 20),
               const RealTimeTimeLogs(),
               const SizedBox(height: 30),
-              
+
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton.icon(
                   onPressed: () => _generateWorkReport(context, mqttClient),
                   icon: const Icon(Icons.summarize_outlined),
-                  label: const Text('Generate Work Report', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Generate Work Report',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue[800],
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -1146,17 +1464,27 @@ void _showTimeTrackerService(BuildContext context, MqttHandler mqttClient) {
   );
 }
 
-void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) {
+void _showExpenseApprovalsService(
+  BuildContext context,
+  MqttHandler mqttClient,
+) {
   final Map<String, TextEditingController> controllers = {};
-  
-  Future<void> saveExpense(String type, String category, String description, String amount, File? imageFile) async {
+
+  Future<void> saveExpense(
+    String type,
+    String category,
+    String description,
+    String amount,
+    File? imageFile,
+  ) async {
     double? amt = double.tryParse(amount);
     if (amt == null || amt <= 0) return;
 
     String? savedImagePath;
     if (imageFile != null) {
       final directory = await getApplicationDocumentsDirectory();
-      final fileName = 'bill_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
+      final fileName =
+          'bill_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
       final savedImage = await imageFile.copy('${directory.path}/$fileName');
       savedImagePath = savedImage.path;
     }
@@ -1168,15 +1496,15 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
       'amount': amt,
       'date': DateTime.now().toIso8601String(),
       'status': 'Pending',
-      'bill_image': savedImagePath
+      'bill_image': savedImagePath,
     };
 
     int id = await DatabaseHelper.instance.insertExpense(expense);
-    
+
     // Append to Report File on device
     expense['id'] = id;
     await ReportService.appendExpenseToReport(expense);
-    
+
     // Fetch user info for MQTT payload
     final user = await DatabaseHelper.instance.getUser();
     final String employeeId = user?['name'] ?? 'Teja';
@@ -1192,7 +1520,14 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
     // NEW: Export to Excel
     await ExcelExportHelper.appendToExcel(
       sheetName: "Additional Expenses",
-      headers: ["Employee Name", "Date", "Service Type", "Category", "Amount (₹)", "Description"],
+      headers: [
+        "Employee Name",
+        "Date",
+        "Service Type",
+        "Category",
+        "Amount (₹)",
+        "Description",
+      ],
       rowData: [
         employeeId,
         DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
@@ -1207,7 +1542,9 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => StatefulBuilder(
       builder: (context, setModalState) => Container(
         height: MediaQuery.of(context).size.height * 0.85,
@@ -1223,16 +1560,20 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios, size: 20),
                   ),
-                  const Text('Additional Expenses', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Additional Expenses',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(width: 48), // Spacer to balance the arrow
                 ],
               ),
               const SizedBox(height: 24),
               ExpenseSection(
-                title: 'Material Expenses', 
-                typeKey: 'Material', 
-                controllers: controllers, 
-                onAdd: (cat, desc, amt, img) => saveExpense('Material', cat, desc, amt, img)
+                title: 'Material Expenses',
+                typeKey: 'Material',
+                controllers: controllers,
+                onAdd: (cat, desc, amt, img) =>
+                    saveExpense('Material', cat, desc, amt, img),
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -1243,21 +1584,43 @@ void _showExpenseApprovalsService(BuildContext context, MqttHandler mqttClient) 
                     // Check for unsaved data in controllers
                     final desc = controllers['Material_desc']?.text;
                     final amt = controllers['Material_amt']?.text;
-                    
-                    if (desc != null && amt != null && desc.isNotEmpty && amt.isNotEmpty) {
+
+                    if (desc != null &&
+                        amt != null &&
+                        desc.isNotEmpty &&
+                        amt.isNotEmpty) {
                       // Trigger save for the unsaved fields
-                      saveExpense('Material', 'Material Expenses', desc, amt, null);
+                      saveExpense(
+                        'Material',
+                        'Material Expenses',
+                        desc,
+                        amt,
+                        null,
+                      );
                     }
 
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All bills submitted successfully!')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('All bills submitted successfully!'),
+                      ),
+                    );
                     Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     elevation: 0,
                   ),
-                  child: const Text('Save Changes', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Save Changes',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -1273,7 +1636,8 @@ class ExpenseSection extends StatefulWidget {
   final String title;
   final String typeKey;
   final Map<String, TextEditingController> controllers;
-  final Function(String category, String desc, String amount, File? image) onAdd;
+  final Function(String category, String desc, String amount, File? image)
+  onAdd;
   final List<String>? subTypes;
 
   const ExpenseSection({
@@ -1294,7 +1658,10 @@ class _ExpenseSectionState extends State<ExpenseSection> {
   final ImagePicker _picker = ImagePicker();
 
   Future<void> _captureImage() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 50,
+    );
     if (photo != null) {
       setState(() {
         _billImage = File(photo.path);
@@ -1306,7 +1673,7 @@ class _ExpenseSectionState extends State<ExpenseSection> {
   Widget build(BuildContext context) {
     final descKey = '${widget.typeKey}_desc';
     final amtKey = '${widget.typeKey}_amt';
-    
+
     widget.controllers.putIfAbsent(descKey, () => TextEditingController());
     widget.controllers.putIfAbsent(amtKey, () => TextEditingController());
 
@@ -1316,15 +1683,25 @@ class _ExpenseSectionState extends State<ExpenseSection> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+            Text(
+              widget.title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey,
+              ),
+            ),
             TextButton.icon(
               onPressed: () {
                 final desc = widget.controllers[descKey]!.text;
                 final amt = widget.controllers[amtKey]!.text;
-                
+
                 if (desc.isEmpty || amt.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter description and amount'), backgroundColor: Colors.red)
+                    const SnackBar(
+                      content: Text('Please enter description and amount'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   return;
                 }
@@ -1333,7 +1710,9 @@ class _ExpenseSectionState extends State<ExpenseSection> {
                 widget.controllers[descKey]!.clear();
                 widget.controllers[amtKey]!.clear();
                 setState(() => _billImage = null);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${widget.title} added to records')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('${widget.title} added to records')),
+                );
               },
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add'),
@@ -1349,8 +1728,14 @@ class _ExpenseSectionState extends State<ExpenseSection> {
             hintText: 'Enter ${widget.title} details',
             filled: true,
             fillColor: Colors.grey[50],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -1362,8 +1747,14 @@ class _ExpenseSectionState extends State<ExpenseSection> {
             prefixText: '₹ ',
             filled: true,
             fillColor: Colors.grey[50],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
           ),
           keyboardType: TextInputType.number,
         ),
@@ -1374,7 +1765,9 @@ class _ExpenseSectionState extends State<ExpenseSection> {
             icon: const Icon(Icons.camera_alt_outlined),
             label: const Text('📷 Capture Bill'),
             style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           )
         else
@@ -1382,10 +1775,21 @@ class _ExpenseSectionState extends State<ExpenseSection> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.file(_billImage!, width: 60, height: 60, fit: BoxFit.cover),
+                child: Image.file(
+                  _billImage!,
+                  width: 60,
+                  height: 60,
+                  fit: BoxFit.cover,
+                ),
               ),
               const SizedBox(width: 12),
-              const Text('Bill Captured ✅', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              const Text(
+                'Bill Captured ✅',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 onPressed: () => setState(() => _billImage = null),
@@ -1398,7 +1802,12 @@ class _ExpenseSectionState extends State<ExpenseSection> {
   }
 }
 
-Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, MqttHandler mqttClient, Function updateState) {
+Widget _buildServiceCard(
+  BuildContext context,
+  Map<String, dynamic> service,
+  MqttHandler mqttClient,
+  Function updateState,
+) {
   return InkWell(
     onTap: () {
       switch (service['title']) {
@@ -1423,8 +1832,13 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
         case 'Additional Expenses':
           _showExpenseApprovalsService(context, mqttClient);
           break;
+        case 'Holiday Calendar':
+          Navigator.pushNamed(context, HolidayCalendarScreen.id);
+          break;
         default:
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${service['title']} service coming soon!')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${service['title']} service coming soon!')),
+          );
       }
     },
     child: Container(
@@ -1432,18 +1846,30 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: service['color'].withValues(alpha: 0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: service['color'].withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
             child: Icon(service['icon'], color: service['color'], size: 32),
           ),
           const SizedBox(height: 12),
-          Text(service['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(
+            service['title'],
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 4),
           Text(
             service['desc'],
@@ -1458,46 +1884,69 @@ Widget _buildServiceCard(BuildContext context, Map<String, dynamic> service, Mqt
   );
 }
 
-
-void _showLeaveService(BuildContext context, MqttHandler mqttClient, Function updateState) {
+void _showLeaveService(
+  BuildContext context,
+  MqttHandler mqttClient,
+  Function updateState,
+) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => DraggableScrollableSheet(
       initialChildSize: 0.9,
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
-      builder: (context, scrollController) => _leaveTrackerView(context, mqttClient, updateState),
+      builder: (context, scrollController) =>
+          _leaveTrackerView(context, mqttClient, updateState),
     ),
   );
 }
 
 // --- SYSTEM CONTROLS ---
-Widget _buildSystemControls(MqttHandler mqttClient, List<String> hrTopics, Function updateState) {
+Widget _buildSystemControls(
+  MqttHandler mqttClient,
+  List<String> hrTopics,
+  Function updateState,
+) {
   return Row(
     children: [
-      if (mqttClient.client.connectionStatus?.state == MqttConnectionState.connecting)
+      if (mqttClient.client.connectionStatus?.state ==
+          MqttConnectionState.connecting)
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
-          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         ),
-      if (mqttClient.client.connectionStatus?.state != MqttConnectionState.connected && mqttClient.client.connectionStatus?.state != MqttConnectionState.connecting)
+      if (mqttClient.client.connectionStatus?.state !=
+              MqttConnectionState.connected &&
+          mqttClient.client.connectionStatus?.state !=
+              MqttConnectionState.connecting)
         IconButton(
           onPressed: () async {
             // Update UI to show loading state
-            updateState(); 
+            updateState();
             await mqttClient.connect();
             // Update UI with final result
             updateState();
           },
           icon: Icon(
-            Icons.link, 
-            color: mqttClient.client.connectionStatus?.state == MqttConnectionState.faulted ? Colors.orange : const Color(0xff21b409)
+            Icons.link,
+            color:
+                mqttClient.client.connectionStatus?.state ==
+                    MqttConnectionState.faulted
+                ? Colors.orange
+                : const Color(0xff21b409),
           ),
         ),
-      if (mqttClient.client.connectionStatus?.state == MqttConnectionState.connected) ...[
+      if (mqttClient.client.connectionStatus?.state ==
+          MqttConnectionState.connected) ...[
         IconButton(
           onPressed: () {
             for (var topic in hrTopics) {
@@ -1514,22 +1963,24 @@ Widget _buildSystemControls(MqttHandler mqttClient, List<String> hrTopics, Funct
           },
           icon: const Icon(Icons.link_off, color: Colors.red),
         ),
-      ]
+      ],
     ],
   );
 }
 
-
 // --- PROFILE VIEW ---
-Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpdate) {
+Widget profileView(
+  BuildContext context,
+  MqttHandler mqttClient,
+  Function onUpdate,
+) {
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
-      final user = snapshot.data ?? {
-        'name': 'Srinivas Reddy',
-        'details': 'Chief Financial Officer'
-      };
-      
+      final user =
+          snapshot.data ??
+          {'name': 'Srinivas Reddy', 'details': 'Chief Financial Officer'};
+
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1540,14 +1991,28 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
                   onLongPress: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const DebugLogsScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const DebugLogsScreen(),
+                      ),
                     );
                   },
-                  child: const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
+                  child: const CircleAvatar(
+                    radius: 50,
+                    child: Icon(Icons.person, size: 50),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                Text(user['name'] ?? 'Unknown Name', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                Text(user['details'] ?? 'No details provided', style: const TextStyle(color: Colors.grey)),
+                Text(
+                  user['name'] ?? 'Unknown Name',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  user['details'] ?? 'No details provided',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -1563,7 +2028,9 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
                 MaterialPageRoute(
                   builder: (context) => ProfileEditScreen(
                     currentName: user['name']?.toString() ?? 'Teja',
-                    currentDetails: user['details']?.toString() ?? 'Chief Financial Officer',
+                    currentDetails:
+                        user['details']?.toString() ??
+                        'Chief Financial Officer',
                   ),
                 ),
               );
@@ -1586,7 +2053,11 @@ Widget profileView(BuildContext context, MqttHandler mqttClient, Function onUpda
               await prefs.clear();
               mqttClient.disconnect();
               if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, LoginScreen.id, (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  WelcomeScreen.id,
+                  (route) => false,
+                );
               }
             },
           ),
@@ -1600,7 +2071,9 @@ void _showSettings(BuildContext context, Function onUpdate) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => Container(
       height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -1612,7 +2085,10 @@ void _showSettings(BuildContext context, Function onUpdate) {
               margin: const EdgeInsets.only(bottom: 15),
               width: 40,
               height: 4,
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
           Row(
@@ -1621,7 +2097,10 @@ void _showSettings(BuildContext context, Function onUpdate) {
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back_ios, size: 20),
               ),
-              const Text('Settings', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const Text(
+                'Settings',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -1629,7 +2108,11 @@ void _showSettings(BuildContext context, Function onUpdate) {
             child: ListView(
               children: [
                 _buildSettingsSection('Account'),
-                _buildSettingsTile(Icons.lock_outline, 'Password & Security', 'Change password, 2FA'),
+                _buildSettingsTile(
+                  Icons.lock_outline,
+                  'Password & Security',
+                  'Change password, 2FA',
+                ),
                 const Divider(),
                 _buildSettingsSection('App Settings'),
                 _buildGeofenceSettingTile(context, onUpdate),
@@ -1637,18 +2120,24 @@ void _showSettings(BuildContext context, Function onUpdate) {
                 const Divider(),
                 _buildSettingsSection('Developer Tools'),
                 ListTile(
-                  leading: const Icon(Icons.cleaning_services_outlined, color: Colors.blue),
+                  leading: const Icon(
+                    Icons.cleaning_services_outlined,
+                    color: Colors.blue,
+                  ),
                   title: const Text('Clean Duplicate Logs'),
                   subtitle: const Text('Delete test logs shorter than 1 min'),
                   onTap: () async {
-                    int deleted = await DatabaseHelper.instance.cleanDuplicateLogs();
+                    int deleted = await DatabaseHelper.instance
+                        .cleanDuplicateLogs();
                     if (context.mounted) {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(deleted > 0 
-                            ? 'Cleaned $deleted duplicate/short logs!' 
-                            : 'No short duplicate logs found.'),
+                          content: Text(
+                            deleted > 0
+                                ? 'Cleaned $deleted duplicate/short logs!'
+                                : 'No short duplicate logs found.',
+                          ),
                           backgroundColor: Colors.blue,
                         ),
                       );
@@ -1658,12 +2147,23 @@ void _showSettings(BuildContext context, Function onUpdate) {
                 ),
                 const Divider(),
                 _buildSettingsSection('Support'),
-                _buildSettingsTile(Icons.description_outlined, 'Terms & Policies', 'Usage terms, Privacy policy'),
-                _buildSettingsTile(Icons.info_outline, 'About App', 'Version 1.0.0 (Latest)'),
+                _buildSettingsTile(
+                  Icons.description_outlined,
+                  'Terms & Policies',
+                  'Usage terms, Privacy policy',
+                ),
+                _buildSettingsTile(
+                  Icons.info_outline,
+                  'About App',
+                  'Version 1.0.0 (Latest)',
+                ),
                 const SizedBox(height: 20),
                 TextButton(
                   onPressed: () {},
-                  child: const Text('Deactivate Account', style: TextStyle(color: Colors.red)),
+                  child: const Text(
+                    'Deactivate Account',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ],
             ),
@@ -1679,7 +2179,11 @@ Widget _buildSettingsSection(String title) {
     padding: const EdgeInsets.symmetric(vertical: 8.0),
     child: Text(
       title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        color: Colors.blue,
+      ),
     ),
   );
 }
@@ -1689,11 +2193,17 @@ Widget _buildSettingsTile(IconData icon, String title, String subtitle) {
     contentPadding: EdgeInsets.zero,
     leading: Container(
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Icon(icon, color: Colors.blueGrey, size: 20),
     ),
     title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-    subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+    subtitle: Text(
+      subtitle,
+      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+    ),
     trailing: const Icon(Icons.chevron_right, size: 20),
     onTap: () {},
   );
@@ -1708,11 +2218,20 @@ Widget _buildGeofenceSettingTile(BuildContext context, Function onUpdate) {
         contentPadding: EdgeInsets.zero,
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(10),
+          ),
           child: const Icon(Icons.radar, color: Colors.blueGrey, size: 20),
         ),
-        title: const Text('Tolerable Range (Geofence)', style: TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text('$radius meters', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        title: const Text(
+          'Tolerable Range (Geofence)',
+          style: TextStyle(fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          '$radius meters',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
         trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: () => _showGeofenceDialog(context, onUpdate),
       );
@@ -1720,7 +2239,10 @@ Widget _buildGeofenceSettingTile(BuildContext context, Function onUpdate) {
   );
 }
 
-Widget _buildOfficeLocationSettingTile(BuildContext context, Function onUpdate) {
+Widget _buildOfficeLocationSettingTile(
+  BuildContext context,
+  Function onUpdate,
+) {
   return FutureBuilder<List<String?>>(
     future: Future.wait([
       DatabaseHelper.instance.getSetting('office_latitude'),
@@ -1728,7 +2250,9 @@ Widget _buildOfficeLocationSettingTile(BuildContext context, Function onUpdate) 
     ]),
     builder: (context, snapshot) {
       String location = 'Not set (using default)';
-      if (snapshot.hasData && snapshot.data![0] != null && snapshot.data![1] != null) {
+      if (snapshot.hasData &&
+          snapshot.data![0] != null &&
+          snapshot.data![1] != null) {
         double lat = double.parse(snapshot.data![0]!);
         double lng = double.parse(snapshot.data![1]!);
         location = '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
@@ -1737,11 +2261,24 @@ Widget _buildOfficeLocationSettingTile(BuildContext context, Function onUpdate) 
         contentPadding: EdgeInsets.zero,
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.location_on, color: Colors.blueGrey, size: 20),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.location_on,
+            color: Colors.blueGrey,
+            size: 20,
+          ),
         ),
-        title: const Text('Office Location', style: TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text(location, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        title: const Text(
+          'Office Location',
+          style: TextStyle(fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          location,
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
         trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: () => _showOfficeLocationDialog(context, onUpdate),
       );
@@ -1751,7 +2288,7 @@ Widget _buildOfficeLocationSettingTile(BuildContext context, Function onUpdate) 
 
 void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
   LatLng? pickedLocation;
-  
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1770,7 +2307,10 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                 margin: const EdgeInsets.only(top: 12, bottom: 8),
                 width: 40,
                 height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1780,7 +2320,13 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.arrow_back_ios, size: 20),
                     ),
-                    const Text('Set Office Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    const Text(
+                      'Set Office Location',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1790,13 +2336,22 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                     FutureBuilder<Position>(
                       future: Geolocator.getCurrentPosition(),
                       builder: (context, snapshot) {
-                        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                        
-                        final initialPos = LatLng(snapshot.data!.latitude, snapshot.data!.longitude);
+                        if (!snapshot.hasData)
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+
+                        final initialPos = LatLng(
+                          snapshot.data!.latitude,
+                          snapshot.data!.longitude,
+                        );
                         pickedLocation ??= initialPos;
 
                         return GoogleMap(
-                          initialCameraPosition: CameraPosition(target: initialPos, zoom: 17),
+                          initialCameraPosition: CameraPosition(
+                            target: initialPos,
+                            zoom: 17,
+                          ),
                           myLocationEnabled: true,
                           myLocationButtonEnabled: true,
                           mapType: MapType.normal,
@@ -1811,7 +2366,11 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.only(bottom: 30),
-                        child: Icon(Icons.location_on, color: Colors.red, size: 40),
+                        child: Icon(
+                          Icons.location_on,
+                          color: Colors.red,
+                          size: 40,
+                        ),
                       ),
                     ),
                     Positioned(
@@ -1825,20 +2384,33 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)],
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 10,
+                                ),
+                              ],
                             ),
                             child: Column(
                               children: [
                                 const Text(
                                   'Center the red marker on your office desk',
-                                  style: TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.w500),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                                 if (pickedLocation != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
                                       '${pickedLocation!.latitude.toStringAsFixed(6)}, ${pickedLocation!.longitude.toStringAsFixed(6)}',
-                                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
                                     ),
                                   ),
                               ],
@@ -1850,23 +2422,43 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
                             child: ElevatedButton(
                               onPressed: () async {
                                 if (pickedLocation != null) {
-                                  await DatabaseHelper.instance.updateSetting('office_latitude', pickedLocation!.latitude.toString());
-                                  await DatabaseHelper.instance.updateSetting('office_longitude', pickedLocation!.longitude.toString());
+                                  await DatabaseHelper.instance.updateSetting(
+                                    'office_latitude',
+                                    pickedLocation!.latitude.toString(),
+                                  );
+                                  await DatabaseHelper.instance.updateSetting(
+                                    'office_longitude',
+                                    pickedLocation!.longitude.toString(),
+                                  );
                                   onUpdate();
                                   if (context.mounted) {
                                     Navigator.pop(context);
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Office set to: ${pickedLocation!.latitude.toStringAsFixed(4)}, ${pickedLocation!.longitude.toStringAsFixed(4)}'))
+                                      SnackBar(
+                                        content: Text(
+                                          'Office set to: ${pickedLocation!.latitude.toStringAsFixed(4)}, ${pickedLocation!.longitude.toStringAsFixed(4)}',
+                                        ),
+                                      ),
                                     );
                                   }
                                 }
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                              child: const Text('Confirm Office Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'Confirm Office Location',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -1878,17 +2470,19 @@ void _showOfficeLocationDialog(BuildContext context, Function onUpdate) {
             ],
           ),
         );
-      }
+      },
     ),
   );
 }
 
 void _showGeofenceDialog(BuildContext context, Function onUpdate) async {
-  String? currentRadius = await DatabaseHelper.instance.getSetting('geofence_radius');
+  String? currentRadius = await DatabaseHelper.instance.getSetting(
+    'geofence_radius',
+  );
   final controller = TextEditingController(text: currentRadius ?? '100');
-  
+
   if (!context.mounted) return;
-  
+
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
@@ -1902,16 +2496,24 @@ void _showGeofenceDialog(BuildContext context, Function onUpdate) async {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed: () async {
-            await DatabaseHelper.instance.updateSetting('geofence_radius', controller.text);
+            await DatabaseHelper.instance.updateSetting(
+              'geofence_radius',
+              controller.text,
+            );
             onUpdate();
             if (context.mounted) {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Radius updated!')));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Radius updated!')));
             }
-          }, 
+          },
           child: const Text('Save'),
         ),
       ],
@@ -1920,7 +2522,11 @@ void _showGeofenceDialog(BuildContext context, Function onUpdate) async {
 }
 
 // --- LEAVE TRACKER (Used by Services) ---
-Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function updateState) {
+Widget _leaveTrackerView(
+  BuildContext context,
+  MqttHandler mqttClient,
+  Function updateState,
+) {
   return SingleChildScrollView(
     padding: const EdgeInsets.all(16.0),
     child: Column(
@@ -1929,7 +2535,10 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('Leave Tracker', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text(
+              'Leave Tracker',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
             ElevatedButton.icon(
               onPressed: () async {
                 await _showApplyLeaveForm(context, mqttClient);
@@ -1937,32 +2546,43 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
               },
               icon: const Icon(Icons.add),
               label: const Text('Apply'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 20),
-        
+
         // Paid Leave Balance Tracker (Large Card Only)
         FutureBuilder<Map<String, dynamic>?>(
           future: DatabaseHelper.instance.getUser(),
           builder: (context, userSnapshot) {
             final empId = userSnapshot.data?['emp_id'] ?? 'AMP-001';
             final year = DateTime.now().year;
-            
+
             return FutureBuilder<int>(
               future: DatabaseHelper.instance.getUsedPaidLeavesThisYear(empId),
               builder: (context, leaveSnapshot) {
                 final used = leaveSnapshot.data ?? 0;
                 final balance = 12 - used;
-                
+
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [Colors.blue[700]!, Colors.blue[400]!]),
+                    gradient: LinearGradient(
+                      colors: [Colors.blue[700]!, Colors.blue[400]!],
+                    ),
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 5))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blue.withValues(alpha: 0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1970,16 +2590,42 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Paid Leave Balance', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          const Text(
+                            'Paid Leave Balance',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
                           const SizedBox(height: 5),
-                          Text('$balance / 12', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-                          Text('Remaining for $year', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                          Text(
+                            '$balance / 12',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Remaining for $year',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                       Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
-                        child: const Icon(Icons.beach_access, color: Colors.white, size: 30),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.beach_access,
+                          color: Colors.white,
+                          size: 30,
+                        ),
                       ),
                     ],
                   ),
@@ -1988,9 +2634,12 @@ Widget _leaveTrackerView(BuildContext context, MqttHandler mqttClient, Function 
             );
           },
         ),
-        
+
         const SizedBox(height: 24),
-        const Text('Pending Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text(
+          'Pending Requests',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         _buildPendingLeavesList(),
       ],
@@ -2014,12 +2663,32 @@ Widget _buildPendingLeavesList() {
           return Card(
             elevation: 0,
             margin: const EdgeInsets.only(bottom: 8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey[200]!),
+            ),
             child: ListTile(
-              leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.calendar_today, color: Colors.blue, size: 20)),
-              title: Text(item['leave_type'] ?? 'Leave', style: const TextStyle(fontWeight: FontWeight.w500)),
+              leading: CircleAvatar(
+                backgroundColor: Colors.blue[50],
+                child: const Icon(
+                  Icons.calendar_today,
+                  color: Colors.blue,
+                  size: 20,
+                ),
+              ),
+              title: Text(
+                item['leave_type'] ?? 'Leave',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
               subtitle: Text('${item['from_date']} to ${item['to_date']}'),
-              trailing: const Text('Pending', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+              trailing: const Text(
+                'Pending',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
             ),
           );
         },
@@ -2028,28 +2697,36 @@ Widget _buildPendingLeavesList() {
   );
 }
 
-Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) async {
+Future<void> _showApplyLeaveForm(
+  BuildContext context,
+  MqttHandler mqttClient,
+) async {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController reasonController = TextEditingController();
-  
+
   // Fetch user and lock status before showing bottom sheet
   final user = await DatabaseHelper.instance.getUser();
   final String empId = user?['emp_id'] ?? 'AMP-001';
-  final bool isPaidLeaveLocked = await DatabaseHelper.instance.hasUsedPaidLeaveThisMonth(empId);
-  
+  final bool isPaidLeaveLocked = await DatabaseHelper.instance
+      .hasUsedPaidLeaveThisMonth(empId);
+
   // Default to Sick Leave if Paid is locked
   String selectedLeaveType = isPaidLeaveLocked ? 'Sick Leave' : 'Paid Leave';
-  
+
   if (!context.mounted) return;
 
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    ),
     builder: (context) => StatefulBuilder(
       builder: (context, setModalState) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: Container(
           padding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
@@ -2063,34 +2740,50 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.arrow_back_ios, size: 20),
                     ),
-                    const Text('Apply Leave', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Apply Leave',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
                 DropdownButtonFormField<String>(
                   initialValue: selectedLeaveType,
-                  decoration: const InputDecoration(labelText: 'Leave type', border: OutlineInputBorder()),
-                  items: ['Paid Leave', 'Earned Leave', 'Sick Leave']
-                      .map((label) {
-                        bool isLocked = label == 'Paid Leave' && isPaidLeaveLocked;
-                        return DropdownMenuItem(
-                          value: label,
-                          enabled: !isLocked,
-                          child: Text(
-                            label + (isLocked ? " (Used this month)" : ""),
-                            style: TextStyle(color: isLocked ? Colors.grey : Colors.black),
-                          ),
-                        );
-                      })
-                      .toList(),
+                  decoration: const InputDecoration(
+                    labelText: 'Leave type',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: ['Paid Leave', 'Earned Leave', 'Sick Leave'].map((
+                    label,
+                  ) {
+                    bool isLocked = label == 'Paid Leave' && isPaidLeaveLocked;
+                    return DropdownMenuItem(
+                      value: label,
+                      enabled: !isLocked,
+                      child: Text(
+                        label + (isLocked ? " (Used this month)" : ""),
+                        style: TextStyle(
+                          color: isLocked ? Colors.grey : Colors.black,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (value) {
-                    if (value != null) setModalState(() => selectedLeaveType = value);
+                    if (value != null)
+                      setModalState(() => selectedLeaveType = value);
                   },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: fromDateController,
-                  decoration: const InputDecoration(labelText: 'From Date', suffixIcon: Icon(Icons.calendar_month), border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'From Date',
+                    suffixIcon: Icon(Icons.calendar_month),
+                    border: OutlineInputBorder(),
+                  ),
                   readOnly: true,
                   onTap: () async {
                     DateTime? pickedDate = await showDatePicker(
@@ -2101,15 +2794,21 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
                     );
                     if (pickedDate != null) {
                       setModalState(() {
-                        fromDateController.text = DateFormat('yyyy-MM-dd').format(pickedDate);
+                        fromDateController.text = DateFormat(
+                          'yyyy-MM-dd',
+                        ).format(pickedDate);
                       });
                     }
-                  }, 
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: toDateController,
-                  decoration: const InputDecoration(labelText: 'To Date', suffixIcon: Icon(Icons.calendar_month), border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'To Date',
+                    suffixIcon: Icon(Icons.calendar_month),
+                    border: OutlineInputBorder(),
+                  ),
                   readOnly: true,
                   onTap: () async {
                     DateTime? pickedDate = await showDatePicker(
@@ -2120,16 +2819,21 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
                     );
                     if (pickedDate != null) {
                       setModalState(() {
-                        toDateController.text = DateFormat('yyyy-MM-dd').format(pickedDate);
+                        toDateController.text = DateFormat(
+                          'yyyy-MM-dd',
+                        ).format(pickedDate);
                       });
                     }
-                  }, 
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: reasonController,
                   maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Reason',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -2137,8 +2841,11 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
                   height: 50,
                   child: ElevatedButton(
                     onPressed: () async {
-                      if (fromDateController.text.isEmpty || toDateController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select dates')));
+                      if (fromDateController.text.isEmpty ||
+                          toDateController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please select dates')),
+                        );
                         return;
                       }
 
@@ -2148,12 +2855,15 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
 
                       // Gatekeeper Logic: One Paid Leave per Month
                       if (selectedLeaveType == 'Paid Leave') {
-                        bool alreadyUsed = await DatabaseHelper.instance.hasUsedPaidLeaveThisMonth(employeeId);
+                        bool alreadyUsed = await DatabaseHelper.instance
+                            .hasUsedPaidLeaveThisMonth(employeeId);
                         if (alreadyUsed) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Policy Error: You have already used your 1 Paid Leave for this month.'),
+                                content: Text(
+                                  'Policy Error: You have already used your 1 Paid Leave for this month.',
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -2171,8 +2881,10 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
                         'appliedDate': DateTime.now().toIso8601String(),
                       };
 
-                      int id = await DatabaseHelper.instance.insertLeave(leaveData);
-                      
+                      int id = await DatabaseHelper.instance.insertLeave(
+                        leaveData,
+                      );
+
                       // Append to Report File
                       leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
@@ -2190,11 +2902,25 @@ Future<void> _showApplyLeaveForm(BuildContext context, MqttHandler mqttClient) a
 
                       if (context.mounted) {
                         Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Leave Application Submitted Successfully!')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Leave Application Submitted Successfully!',
+                            ),
+                          ),
+                        );
                       }
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: const Text('Submit Application', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Submit Application',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
                   ),
                 ),
               ],
@@ -2219,17 +2945,25 @@ Future<void> _calculateTripCost(
     // REQUIREMENT: Use strictly hardcoded office coordinates as the Source
     const double srcLat = kOfficeLatitude;
     const double srcLng = kOfficeLongitude;
-    
+
     // Calculate Straight Line Distance in Meters between Office and Destination
     double straightDistance = Geolocator.distanceBetween(
-        srcLat, srcLng, dest.latitude, dest.longitude);
+      srcLat,
+      srcLng,
+      dest.latitude,
+      dest.longitude,
+    );
 
     // Road Factor Formula: (distanceInMeters * 1.42) / 1000 to get Km
     // This accounts for road winding and driving estimate factor
     double roadDistanceKm = (straightDistance * 1.42) / 1000;
-    
-    AppLogger.log("GEO: Source (Office): $srcLat, $srcLng | Dest: ${dest.latitude}, ${dest.longitude}");
-    AppLogger.log("GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km");
+
+    AppLogger.log(
+      "GEO: Source (Office): $srcLat, $srcLng | Dest: ${dest.latitude}, ${dest.longitude}",
+    );
+    AppLogger.log(
+      "GEO: Straight: ${straightDistance.toStringAsFixed(0)}m, Road: ${roadDistanceKm.toStringAsFixed(2)}km",
+    );
 
     // Updated REQUIREMENT: The company pays the fuel price for every 35 km
     double price = double.tryParse(priceCtrl.text) ?? 103.0;
@@ -2242,7 +2976,8 @@ Future<void> _calculateTripCost(
 
     amtCtrl.text = cost.toStringAsFixed(2);
     onResult(
-        "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Fuel Price: ₹$price (for every 35 km)");
+      "Distance: ${roadDistanceKm.toStringAsFixed(1)} km | Fuel Price: ₹$price (for every 35 km)",
+    );
   } catch (e) {
     AppLogger.log("GEO Error: $e");
     onResult("Error calculating distance: $e");

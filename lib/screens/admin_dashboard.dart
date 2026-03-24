@@ -8,6 +8,8 @@ import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
 import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
+import 'holiday_calendar_screen.dart';
+import 'welcome_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
@@ -38,7 +40,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        LoginScreen.id,
+        WelcomeScreen.id,
         (route) => false,
       );
     }
@@ -161,6 +163,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   Icons.location_on_outlined,
                   Colors.red,
                   () => Navigator.pushNamed(context, AdminLocationScreen.id),
+                ),
+                _buildServiceCard(
+                  context,
+                  'Holiday Calendar',
+                  Icons.celebration_outlined,
+                  Colors.deepOrange,
+                  () => Navigator.pushNamed(context, HolidayCalendarScreen.id),
                 ),
               ],
             ),

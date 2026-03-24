@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 25, // Bumped to 25 to add employee_id to users table
+      version: 26, // Bumped to 26 to add holidays table
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -31,6 +31,10 @@ class DatabaseHelper {
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Force creation of tables if they are missing
     await _createTables(db);
+
+    if (oldVersion < 26) {
+      await _seedDefaultHolidays(db);
+    }
 
     if (oldVersion < 25) {
       try {
@@ -186,6 +190,8 @@ class DatabaseHelper {
       'lat': 12.9716,
       'lng': 77.5946,
     });
+
+    await _seedDefaultHolidays(db);
   }
 
   Future<void> _createTables(Database db) async {
@@ -345,6 +351,15 @@ class DatabaseHelper {
         longitude REAL,
         employee_id TEXT,
         status TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS holidays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        name TEXT NOT NULL,
+        is_recurring INTEGER DEFAULT 0
       )
     ''');
   }
@@ -1360,5 +1375,81 @@ class DatabaseHelper {
 
   Future<void> seedData() async {
     // Dummy data generation logic removed
+  }
+
+  // --- Holiday Methods ---
+
+  static const List<Map<String, String>> _companyHolidays = [
+    {'month': '01', 'day': '01', 'name': 'New Year'},
+    {'month': '01', 'day': '14', 'name': 'Makara Sankranti'},
+    {'month': '01', 'day': '26', 'name': 'Republic Day'},
+    {'month': '02', 'day': '26', 'name': 'Maha Shivarathri'},
+    {'month': '03', 'day': '30', 'name': 'Ugadi'},
+    {'month': '05', 'day': '01', 'name': 'May Day'},
+    {'month': '08', 'day': '15', 'name': 'Independence Day'},
+    {'month': '08', 'day': '27', 'name': 'Ganesh Chaturthi'},
+    {'month': '10', 'day': '02', 'name': 'Gandhi Jayanthi / Dasara Festival'},
+    {'month': '10', 'day': '20', 'name': 'Deepavali Festival'},
+    {'month': '11', 'day': '01', 'name': 'Kannada Rajyothsava'},
+  ];
+
+  Future<void> _seedDefaultHolidays(Database db) async {
+    // Check if holidays already seeded
+    final existing = await db.query('holidays', limit: 1);
+    if (existing.isNotEmpty) return;
+
+    final years = [2025, 2026];
+    for (final year in years) {
+      for (final h in _companyHolidays) {
+        await db.insert('holidays', {
+          'date': '$year-${h['month']}-${h['day']}',
+          'name': h['name'],
+          'is_recurring': 1,
+        });
+      }
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getHolidaysForYear(int year) async {
+    final db = await instance.database;
+    return await db.query(
+      'holidays',
+      where: "date LIKE ?",
+      whereArgs: ['$year%'],
+      orderBy: 'date ASC',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAllHolidays() async {
+    final db = await instance.database;
+    return await db.query('holidays', orderBy: 'date ASC');
+  }
+
+  Future<int> addHoliday(
+    String date,
+    String name, {
+    bool isRecurring = false,
+  }) async {
+    final db = await instance.database;
+    return await db.insert('holidays', {
+      'date': date,
+      'name': name,
+      'is_recurring': isRecurring ? 1 : 0,
+    });
+  }
+
+  Future<int> deleteHoliday(int id) async {
+    final db = await instance.database;
+    return await db.delete('holidays', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> updateHoliday(int id, String date, String name) async {
+    final db = await instance.database;
+    return await db.update(
+      'holidays',
+      {'date': date, 'name': name},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }

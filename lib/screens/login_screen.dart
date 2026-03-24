@@ -16,7 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _idController = TextEditingController();
-  
+
   bool _isLoading = false;
   double _opacity = 0.0;
 
@@ -58,7 +58,8 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('employee_id', empId);
         await prefs.setString('employee_name', user['name'] ?? nameInput);
-        
+        await prefs.setString('user_role', role);
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -69,16 +70,26 @@ class _LoginScreenState extends State<LoginScreen> {
           );
 
           if (role == 'Admin') {
-            Navigator.pushNamedAndRemoveUntil(context, AdminDashboard.id, (route) => false);
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              AdminDashboard.id,
+              (route) => false,
+            );
           } else if (role == 'Employee' || role == 'Trainee') {
-            Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              HomePage.id,
+              (route) => false,
+            );
           }
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Invalid credentials or Account disabled. Please contact HR.'),
+              content: Text(
+                'Invalid credentials or Account disabled. Please contact HR.',
+              ),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -88,7 +99,10 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error during login: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error during login: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -135,10 +149,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           color: Colors.white,
                           shape: BoxShape.circle,
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                            ),
                           ],
                         ),
-                        child: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.primary, size: 20),
+                        child: Icon(
+                          Icons.arrow_back_ios_new,
+                          color: theme.colorScheme.primary,
+                          size: 20,
+                        ),
                       ),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -154,10 +175,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.1,
+                            ),
                             blurRadius: 20,
                             spreadRadius: 5,
-                          )
+                          ),
                         ],
                       ),
                       child: Image.asset(
@@ -197,7 +220,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           hint: 'Employee Name',
                           icon: Icons.person_outline_rounded,
                           validator: (value) {
-                            if (value == null || value.isEmpty) return 'Enter full name';
+                            if (value == null || value.isEmpty)
+                              return 'Enter full name';
                             return null;
                           },
                         ),
@@ -208,7 +232,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           icon: Icons.badge_outlined,
                           keyboardType: TextInputType.text,
                           validator: (value) {
-                            if (value == null || value.isEmpty) return 'Enter your unique ID';
+                            if (value == null || value.isEmpty)
+                              return 'Enter your unique ID';
                             return null;
                           },
                         ),
@@ -217,7 +242,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 30),
                         Text(
                           "Contact Admin if you forgot your ID",
-                          style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 13,
+                          ),
                         ),
                         const SizedBox(height: 20),
                         Row(
@@ -289,7 +317,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 20,
+            horizontal: 20,
+          ),
         ),
       ),
     );
@@ -320,13 +351,18 @@ class _LoginScreenState extends State<LoginScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
         child: _isLoading
             ? const SizedBox(
                 height: 24,
                 width: 24,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
               )
             : const Text(
                 'LOG IN',

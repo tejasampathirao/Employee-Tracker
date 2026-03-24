@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../components/rounded_button.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
+import 'home.dart';
+import 'admin_dashboard.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -12,6 +15,35 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingSession();
+  }
+
+  Future<void> _checkExistingSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('employee_id');
+    final role = prefs.getString('user_role');
+
+    if (empId != null && empId.isNotEmpty && role != null) {
+      if (!mounted) return;
+      if (role == 'Admin') {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AdminDashboard.id,
+          (route) => false,
+        );
+      } else {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          HomePage.id,
+          (route) => false,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
