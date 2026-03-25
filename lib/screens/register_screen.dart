@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/home.dart';
 import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
-import '../services/mqtt_handler.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -66,45 +65,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final String name = _nameController.text.trim();
       final String empId = _idController.text.trim();
 
-      // Step 1: Check with MQTT server if emp_id is available
-      final mqttHandler = MqttHandler();
-      final serverResponse = await mqttHandler.checkRegistration(
-        empId: empId,
-        name: name,
-      );
-
-      final String status = serverResponse['status'] ?? 'error';
-      final String reason = serverResponse['reason'] ?? 'Unknown error';
-
-      if (status == 'denied') {
-        // Server says this emp_id is already active
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(reason),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
-
-      if (status == 'error') {
-        // Server error or timeout
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(reason),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Step 2: Server approved — proceed with local DB registration
       final bool success = await DatabaseHelper.instance
           .registerUserWithNameIdRole(name, empId, _selectedRole);
 
@@ -113,7 +73,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('employee_id', empId);
         await prefs.setString('employee_name', name);
-        await prefs.setString('user_role', _selectedRole);
+        await prefs.setString(
+          'employee_role',
+          _selectedRole,
+        ); // Save role for session logic
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -143,9 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                'Employee ID already exists locally. Please log in.',
-              ),
+              content: Text('Employee ID already exists. Please log in.'),
               backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
             ),

@@ -86,7 +86,6 @@ DATA_TOPICS = [
     ("employee/tracker/expenses/travel", 1),    # travel expense category
     ("employee/tracker/expenses/material", 1),  # material expense category
     ("admin/employee/details", 1),                # employee details from admin
-    ("employee/register/check", 1),               # registration check requests from app
 ]
 
 # FETCH_REQUEST_TOPIC: When an admin app publishes a message to THIS topic,
@@ -377,82 +376,6 @@ def handle_fetch_request(client):
 
 
 # ============================================================================
-# REGISTRATION CHECK - Validates if an emp_id is available for registration
-# ============================================================================
-
-def handle_registration_check(client, msg):
-    """
-    When the Flutter app wants to register a new user, it first sends
-    the emp_id to this topic. This function checks:
-      - If the emp_id already exists AND is_active = 1 → DENY (already active)
-      - If the emp_id doesn't exist OR is_active = 0 → ALLOW registration
-
-    Publishes the result back on 'employee/register/response'.
-    """
-    try:
-        payload = json.loads(msg.payload.decode())
-        emp_id = payload.get('emp_id', '')
-        name = payload.get('name', '')
-        request_id = payload.get('request_id', '')
-
-        print(f"\n[REGISTRATION CHECK] emp_id: {emp_id}, name: {name}")
-
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-
-        # Check if this emp_id exists and is active
-        cursor.execute('SELECT emp_id, name, is_active FROM users WHERE emp_id = ?', (emp_id,))
-        existing = cursor.fetchone()
-        conn.close()
-
-        if existing:
-            existing_name = existing[1]
-            is_active = existing[2]
-
-            if is_active == 1:
-                # Employee ID is already active — deny registration
-                response = {
-                    "request_id": request_id,
-                    "emp_id": emp_id,
-                    "status": "denied",
-                    "reason": f"Employee ID '{emp_id}' is already registered and active under '{existing_name}'."
-                }
-                print(f"[REGISTRATION DENIED] {emp_id} is active (belongs to {existing_name})")
-            else:
-                # Employee exists but is deactivated — allow re-registration
-                response = {
-                    "request_id": request_id,
-                    "emp_id": emp_id,
-                    "status": "allowed",
-                    "reason": "Employee ID was previously deactivated. Re-registration allowed."
-                }
-                print(f"[REGISTRATION ALLOWED] {emp_id} exists but is_active=0, re-registration OK")
-        else:
-            # Employee ID doesn't exist at all — allow registration
-            response = {
-                "request_id": request_id,
-                "emp_id": emp_id,
-                "status": "allowed",
-                "reason": "New employee ID. Registration allowed."
-            }
-            print(f"[REGISTRATION ALLOWED] {emp_id} is new, not in database")
-
-        client.publish('employee/register/response', json.dumps(response), qos=1)
-        print(f"[REGISTRATION RESPONSE] Published: {response['status']}")
-
-    except Exception as e:
-        print(f"Registration Check Error: {e}")
-        # On error, send a failure response so the app doesn't hang
-        error_response = {
-            "request_id": payload.get('request_id', '') if 'payload' in dir() else '',
-            "emp_id": "",
-            "status": "error",
-            "reason": "Server error during registration check."
-        }
-        client.publish('employee/register/response', json.dumps(error_response), qos=1)
-
-
-# ============================================================================
 # MESSAGE HANDLER - Called automatically whenever ANY subscribed message arrives
 # ============================================================================
 
@@ -486,11 +409,6 @@ def on_message(client, userdata, msg):
         # and return early (don't try to parse it as employee data).
         if msg.topic == FETCH_REQUEST_TOPIC:
             handle_fetch_request(client)
-            return
-
-        # --- CHECK: Is this a registration check request? ---
-        if msg.topic == 'employee/register/check':
-            handle_registration_check(client, msg)
             return
 
         # --- PARSE THE INCOMING JSON DATA ---

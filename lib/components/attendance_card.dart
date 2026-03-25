@@ -428,27 +428,8 @@ class _AttendanceCardState extends State<AttendanceCard>
 
         if (widget.onActionComplete != null) widget.onActionComplete!();
       } else {
-        // Check if employee is outside the geofence
-        bool isOutsideGeofence = false;
-        try {
-          Position currentPos = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-            ),
-          );
-          double distance = Geolocator.distanceBetween(
-            currentPos.latitude,
-            currentPos.longitude,
-            kOfficeLatitude,
-            kOfficeLongitude,
-          );
-          isOutsideGeofence = distance > kGeofenceRadiusMeter;
-        } catch (e) {
-          AppLogger.log("CHECKOUT: Could not get position: $e");
-        }
-
-        // Allow checkout if: auto-checkout, outside geofence, or past shift end
-        if (!isAuto && !isOutsideGeofence) {
+        // Prevent manual checkout before shift end time (5:30 PM)
+        if (!isAuto) {
           final shiftEnd = DateTime(
             now.year,
             now.month,
