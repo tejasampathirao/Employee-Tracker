@@ -562,7 +562,6 @@ class MqttHandler {
 
             case 'expense_claim':
             case 'additional_expense':
-            case 'material_expense':
               await DatabaseHelper.instance.insertExpenseRecord(payload);
               AppLogger.log('MQTT Sync: $type saved.');
               break;
@@ -595,6 +594,32 @@ class MqttHandler {
             case 'live_location':
               await DatabaseHelper.instance.insertLocationRecord(payload);
               AppLogger.log('MQTT Sync: Location update saved.');
+              break;
+
+            case 'admin_approval':
+              // Admin approval echoed back — no local action needed
+              // (local DB already updated by the admin who approved)
+              AppLogger.log(
+                'MQTT Sync: Admin approval received for ${payload['employee_id']}',
+              );
+              break;
+
+            case 'employee_details':
+              // Employee details update from admin — no local DB action needed
+              AppLogger.log(
+                'MQTT Sync: Employee details update received for ${payload['emp_id']}',
+              );
+              break;
+
+            case 'food_expense':
+            case 'fuel_expense':
+            case 'travel_category_expense':
+            case 'material_expense':
+              // Individual category expenses are already handled by the combined
+              // expense_request handler above, so skip to prevent duplicates
+              AppLogger.log(
+                'MQTT Sync: Skipping individual $type (handled by combined request).',
+              );
               break;
 
             default:
