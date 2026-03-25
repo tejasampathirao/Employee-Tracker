@@ -688,30 +688,10 @@ def on_message(client, userdata, msg):
                 print(f"Employee details INSERTED: {emp_id} - {payload.get('name')}")
 
         # --- CATEGORY EXPENSES (employee/tracker/expenses/food|fuel|travel|material) ---
+        # These are now redundant — the combined expense_request handler above already
+        # splits and stores each category. Skip to prevent duplicate DB entries.
         elif msg_type in ['food_expense', 'fuel_expense', 'travel_category_expense', 'material_expense']:
-            # Map type to category name
-            category_map = {
-                'food_expense': 'Food',
-                'fuel_expense': 'Fuel',
-                'travel_category_expense': 'Travel',
-                'material_expense': 'Material'
-            }
-            cursor.execute('''
-                INSERT OR IGNORE INTO employee_expenses (request_id, employee_id, date, expense_category, description, amount, status, latitude, longitude, distance)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                payload.get('request_id'),
-                payload.get('employee_id'),
-                payload.get('timestamp', '').split('T')[0],
-                category_map.get(msg_type, 'General'),
-                payload.get('description', ''),
-                payload.get('amount', 0.0),
-                payload.get('status', 'Pending'),
-                payload.get('latitude'),
-                payload.get('longitude'),
-                payload.get('distance_km')
-            ))
-            print(f"{msg_type} synced: {payload.get('request_id')}")
+            print(f"[SKIPPED] {msg_type} — already handled by combined expense_request")
 
         # --- STATUS UPDATE (updates existing records) ---
         elif msg_type == 'status_update':

@@ -291,7 +291,7 @@ class MqttHandler {
 
     final String jsonString = jsonEncode(payload);
     AppLogger.log('MQTT DEBUG [Expense Request]: Sending Payload: $jsonString');
-    publish(expensesTopic, jsonString, retain: true);
+    publish(expensesTopic, jsonString);
   }
 
   // --- Admin Service Publish Functions ---

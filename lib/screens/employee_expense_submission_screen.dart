@@ -80,36 +80,6 @@ class _EmployeeExpenseSubmissionScreenState
         expenses: expenses,
       );
 
-      // Publish to individual expense category topics
-      if (_hasFood) {
-        MqttHandler().publishFoodExpense(
-          employeeId: employeeId,
-          amount: double.tryParse(_foodAmt.text) ?? 0.0,
-          description: _foodDesc.text,
-        );
-      }
-      if (_hasFuel) {
-        MqttHandler().publishFuelExpense(
-          employeeId: employeeId,
-          amount: double.tryParse(_fuelAmt.text) ?? 0.0,
-          description: _fuelDesc.text,
-        );
-      }
-      if (_hasTravel) {
-        MqttHandler().publishTravelCategoryExpense(
-          employeeId: employeeId,
-          amount: double.tryParse(_travelAmt.text) ?? 0.0,
-          description: _travelDesc.text,
-        );
-      }
-      if (_hasMaterial) {
-        MqttHandler().publishMaterialExpense(
-          employeeId: employeeId,
-          amount: double.tryParse(_materialAmt.text) ?? 0.0,
-          description: _materialDesc.text,
-        );
-      }
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
