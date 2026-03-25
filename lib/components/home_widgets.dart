@@ -8,7 +8,6 @@ import 'package:path/path.dart' as path;
 import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
 import '../screens/welcome_screen.dart';
-import '../screens/holiday_calendar_screen.dart';
 import 'attendance_card.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
@@ -395,12 +394,6 @@ Widget servicesView(
       'color': Colors.purple,
       'desc': 'Manage your requests',
     },
-    {
-      'title': 'Holiday Calendar',
-      'icon': Icons.celebration,
-      'color': Colors.deepOrange,
-      'desc': 'Company holidays list',
-    },
   ];
 
   return Scaffold(
@@ -444,10 +437,15 @@ Widget servicesView(
 
 // --- Detailed Service Views ---
 
-Color _buildAttendanceStatusColor(DateTime day, String? status) {
+Color _buildAttendanceStatusColor(
+  DateTime day,
+  String? status,
+  Set<String> holidayDates,
+) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final checkDay = DateTime(day.year, day.month, day.day);
+  final dateStr = DateFormat('yyyy-MM-dd').format(day);
 
   // Priority 1: Future Dates
   if (checkDay.isAfter(today)) {
@@ -459,15 +457,23 @@ Color _buildAttendanceStatusColor(DateTime day, String? status) {
     return Colors.black;
   }
 
-  // Priority 3: Check Database Status (CRITICAL STEP)
+  // Priority 3: Holiday
+  if (holidayDates.contains(dateStr)) {
+    if (status == 'Present' || status == 'Active') {
+      return Colors.deepPurple; // OT — worked on holiday
+    }
+    return Colors.deepOrange; // Holiday — no work
+  }
+
+  // Priority 4: Check Database Status
   if (status == 'Present') return Colors.green;
   if (status == 'Incomplete') return Colors.orange;
 
-  // Priority 4: The "No Record" Fallback
+  // Priority 5: The "No Record" Fallback
   if (checkDay.isAtSameMomentAs(today)) {
-    return Colors.orange; // Today - assuming active/start of day
+    return Colors.orange;
   } else {
-    return Colors.red; // Past day - Absent
+    return Colors.red;
   }
 }
 
@@ -486,249 +492,523 @@ void _showAttendanceService(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
     ),
-    builder: (context) => Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      padding: const EdgeInsets.all(20),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_ios, size: 20),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setModalState) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.85,
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    'Attendance: ${DateFormat('MMMM yyyy').format(now)}',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_ios, size: 20),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () =>
-                      _showLeaveService(context, mqttClient, updateState),
-                  icon: const Icon(Icons.calendar_today, size: 16),
-                  label: const Text('Manage Leaves'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[50],
-                    foregroundColor: Colors.blue,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            FutureBuilder<List<Map<String, dynamic>>>(
-              future: DatabaseHelper.instance.getAllAttendance(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError)
-                  return _buildEmptyState('Error loading stats');
-                if (!snapshot.hasData) return const SizedBox.shrink();
-
-                final currentMonthStr = DateFormat('yyyy-MM').format(now);
-                final monthlyData = snapshot.data!
-                    .where((e) => e['date'].startsWith(currentMonthStr))
-                    .toList();
-
-                // Requirement 1: Day-Based Processing (Unique Dates)
-                Map<String, String> dailyStatus = {};
-                for (var log in monthlyData) {
-                  String date = log['date'];
-                  String status = log['status'] ?? 'Incomplete';
-                  if (log['checkOutTime'] == null) status = 'Active';
-
-                  // Priority: Present > Incomplete/Active
-                  if (dailyStatus[date] == 'Present') continue;
-                  dailyStatus[date] = status;
-                }
-
-                int daysPresent = dailyStatus.values
-                    .where((v) => v == 'Present')
-                    .length;
-                int daysIncomplete = dailyStatus.values
-                    .where((v) => v == 'Incomplete' || v == 'Active')
-                    .length;
-
-                // Filter out weekends from total days for accurate absent count
-                int totalDaysPassed = 0;
-                for (int i = 1; i <= now.day; i++) {
-                  final d = DateTime(now.year, now.month, i);
-                  if (d.weekday != DateTime.sunday) {
-                    totalDaysPassed++;
-                  }
-                }
-
-                int daysAbsent =
-                    totalDaysPassed - (daysPresent + daysIncomplete);
-                if (daysAbsent < 0) daysAbsent = 0;
-
-                double total = (daysPresent + daysIncomplete + daysAbsent)
-                    .toDouble();
-                if (total == 0) total = 1;
-
-                return Column(
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    SizedBox(
-                      height: 180,
-                      child: PieChart(
-                        PieChartData(
-                          sectionsSpace: 4,
-                          centerSpaceRadius: 40,
-                          sections: [
-                            PieChartSectionData(
+                    Expanded(
+                      child: Text(
+                        'Attendance: ${DateFormat('MMMM yyyy').format(now)}',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () =>
+                          _showLeaveService(context, mqttClient, updateState),
+                      icon: const Icon(Icons.calendar_today, size: 16),
+                      label: const Text('Manage Leaves'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[50],
+                        foregroundColor: Colors.blue,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                // Pie chart + Calendar with holidays
+                FutureBuilder<List<dynamic>>(
+                  future: Future.wait([
+                    DatabaseHelper.instance.getAllAttendance(),
+                    DatabaseHelper.instance.getHolidaysForYear(now.year),
+                    SharedPreferences.getInstance(),
+                  ]),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError)
+                      return _buildEmptyState('Error loading stats');
+                    if (!snapshot.hasData)
+                      return const Center(child: CircularProgressIndicator());
+
+                    final allAttendance =
+                        snapshot.data![0] as List<Map<String, dynamic>>;
+                    final holidays =
+                        snapshot.data![1] as List<Map<String, dynamic>>;
+                    final prefs = snapshot.data![2] as SharedPreferences;
+                    final isAdmin = prefs.getString('user_role') == 'Admin';
+
+                    // Build holiday lookup
+                    final Set<String> holidayDates = {};
+                    final Map<String, String> holidayNames = {};
+                    for (final h in holidays) {
+                      final d = h['date'] as String;
+                      holidayDates.add(d);
+                      holidayNames[d] = h['name'] as String;
+                    }
+
+                    final currentMonthStr = DateFormat('yyyy-MM').format(now);
+                    final monthlyData = allAttendance
+                        .where((e) => e['date'].startsWith(currentMonthStr))
+                        .toList();
+
+                    // Day-based processing
+                    Map<String, String> dailyStatus = {};
+                    for (var log in monthlyData) {
+                      String date = log['date'];
+                      String status = log['status'] ?? 'Incomplete';
+                      if (log['checkOutTime'] == null) status = 'Active';
+                      if (dailyStatus[date] == 'Present') continue;
+                      dailyStatus[date] = status;
+                    }
+
+                    int daysPresent = dailyStatus.values
+                        .where((v) => v == 'Present')
+                        .length;
+                    int daysIncomplete = dailyStatus.values
+                        .where((v) => v == 'Incomplete' || v == 'Active')
+                        .length;
+
+                    int totalDaysPassed = 0;
+                    for (int i = 1; i <= now.day; i++) {
+                      final d = DateTime(now.year, now.month, i);
+                      final dateStr = DateFormat('yyyy-MM-dd').format(d);
+                      if (d.weekday != DateTime.sunday &&
+                          !holidayDates.contains(dateStr)) {
+                        totalDaysPassed++;
+                      }
+                    }
+
+                    int daysAbsent =
+                        totalDaysPassed - (daysPresent + daysIncomplete);
+                    if (daysAbsent < 0) daysAbsent = 0;
+
+                    // Count OT days (worked on holidays)
+                    int otDays = 0;
+                    for (final entry in dailyStatus.entries) {
+                      if (holidayDates.contains(entry.key) &&
+                          (entry.value == 'Present' ||
+                              entry.value == 'Active')) {
+                        otDays++;
+                      }
+                    }
+
+                    double total = (daysPresent + daysIncomplete + daysAbsent)
+                        .toDouble();
+                    if (total == 0) total = 1;
+
+                    final statusMap = {
+                      for (var e in allAttendance)
+                        DateFormat('yyyy-MM-dd').format(
+                          DateTime.parse(e['date']),
+                        ): (e['checkOutTime'] == null
+                            ? 'Active'
+                            : e['status']),
+                    };
+
+                    return Column(
+                      children: [
+                        // Pie Chart
+                        SizedBox(
+                          height: 180,
+                          child: PieChart(
+                            PieChartData(
+                              sectionsSpace: 4,
+                              centerSpaceRadius: 40,
+                              sections: [
+                                PieChartSectionData(
+                                  color: Colors.green,
+                                  value: daysPresent.toDouble(),
+                                  title:
+                                      '${((daysPresent / total) * 100).toStringAsFixed(0)}%',
+                                  radius: 50,
+                                  titleStyle: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                PieChartSectionData(
+                                  color: Colors.orange,
+                                  value: daysIncomplete.toDouble(),
+                                  title:
+                                      '${((daysIncomplete / total) * 100).toStringAsFixed(0)}%',
+                                  radius: 50,
+                                  titleStyle: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                PieChartSectionData(
+                                  color: Colors.red,
+                                  value: daysAbsent.toDouble(),
+                                  title:
+                                      '${((daysAbsent / total) * 100).toStringAsFixed(0)}%',
+                                  radius: 50,
+                                  titleStyle: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _LegendItem(
                               color: Colors.green,
-                              value: daysPresent.toDouble(),
-                              title:
-                                  '${((daysPresent / total) * 100).toStringAsFixed(0)}%',
-                              radius: 50,
-                              titleStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                              label: 'Present: $daysPresent',
                             ),
-                            PieChartSectionData(
+                            const SizedBox(width: 10),
+                            _LegendItem(
                               color: Colors.orange,
-                              value: daysIncomplete.toDouble(),
-                              title:
-                                  '${((daysIncomplete / total) * 100).toStringAsFixed(0)}%',
-                              radius: 50,
-                              titleStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                              label: 'Incomplete: $daysIncomplete',
                             ),
-                            PieChartSectionData(
+                            const SizedBox(width: 10),
+                            _LegendItem(
                               color: Colors.red,
-                              value: daysAbsent.toDouble(),
-                              title:
-                                  '${((daysAbsent / total) * 100).toStringAsFixed(0)}%',
-                              radius: 50,
-                              titleStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                              label: 'Absent: $daysAbsent',
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _LegendItem(
-                          color: Colors.green,
-                          label: 'Present: $daysPresent',
+                        if (otDays > 0) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _LegendItem(
+                                color: Colors.deepPurple,
+                                label: 'OT: $otDays',
+                              ),
+                              const SizedBox(width: 10),
+                              _LegendItem(
+                                color: Colors.deepOrange,
+                                label: 'Holiday',
+                              ),
+                              const SizedBox(width: 10),
+                              _LegendItem(
+                                color: Colors.black,
+                                label: 'Weekend',
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (otDays == 0) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _LegendItem(
+                                color: Colors.deepOrange,
+                                label: 'Holiday',
+                              ),
+                              const SizedBox(width: 10),
+                              _LegendItem(
+                                color: Colors.black,
+                                label: 'Weekend',
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+
+                        // Calendar Grid
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 7,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                              ),
+                          itemCount: daysInMonth + firstDayOffset,
+                          itemBuilder: (context, index) {
+                            if (index < firstDayOffset) return const SizedBox();
+
+                            final day = index - firstDayOffset + 1;
+                            final date = DateTime(now.year, now.month, day);
+                            final dateStr = DateFormat(
+                              'yyyy-MM-dd',
+                            ).format(date);
+                            final status = statusMap[dateStr];
+                            final isToday =
+                                date.day == now.day &&
+                                date.month == now.month &&
+                                date.year == now.year;
+                            final isFuture = date.isAfter(DateTime.now());
+                            final isHoliday = holidayDates.contains(dateStr);
+
+                            return GestureDetector(
+                              onTap: isHoliday
+                                  ? () {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '🎉 ${holidayNames[dateStr]}',
+                                          ),
+                                          duration: const Duration(seconds: 2),
+                                          backgroundColor: Colors.deepOrange,
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _buildAttendanceStatusColor(
+                                    date,
+                                    status,
+                                    holidayDates,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: isToday
+                                      ? Border.all(color: Colors.blue, width: 2)
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$day',
+                                    style: TextStyle(
+                                      color:
+                                          (date.weekday == DateTime.sunday ||
+                                              isFuture)
+                                          ? Colors.grey[600]
+                                          : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: isHoliday ? 11 : 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                        const SizedBox(width: 10),
-                        _LegendItem(
-                          color: Colors.orange,
-                          label: 'Incomplete: $daysIncomplete',
-                        ),
-                        const SizedBox(width: 10),
-                        _LegendItem(
-                          color: Colors.red,
-                          label: 'Absent: $daysAbsent',
-                        ),
-                        const SizedBox(width: 10),
-                        _LegendItem(color: Colors.black, label: 'Weekend'),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                );
-              },
-            ),
-            FutureBuilder<List<Map<String, dynamic>>>(
-              future: DatabaseHelper.instance.getAllAttendance(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError)
-                  return _buildEmptyState('Error loading calendar');
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
 
-                final statusMap = {
-                  for (var e in snapshot.data!)
-                    DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date'])):
-                        (e['checkOutTime'] == null ? 'Active' : e['status']),
-                };
-
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 7,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                  ),
-                  itemCount: daysInMonth + firstDayOffset,
-                  itemBuilder: (context, index) {
-                    if (index < firstDayOffset) return const SizedBox();
-
-                    final day = index - firstDayOffset + 1;
-                    final date = DateTime(now.year, now.month, day);
-                    final dateStr = DateFormat('yyyy-MM-dd').format(date);
-                    final status = statusMap[dateStr];
-                    final isToday =
-                        date.day == now.day &&
-                        date.month == now.month &&
-                        date.year == now.year;
-                    final isFuture = date.isAfter(DateTime.now());
-
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: _buildAttendanceStatusColor(date, status),
-                        borderRadius: BorderRadius.circular(8),
-                        border: isToday
-                            ? Border.all(color: Colors.blue, width: 2)
-                            : null,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$day',
-                          style: TextStyle(
-                            color: (date.weekday == DateTime.sunday || isFuture)
-                                ? Colors.grey[600]
-                                : Colors.white,
-                            fontWeight: FontWeight.bold,
+                        const SizedBox(height: 12),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _LegendItem(
+                                color: Colors.green,
+                                label: 'Present',
+                              ),
+                              _LegendItem(
+                                color: Colors.orange,
+                                label: 'Incomplete',
+                              ),
+                              _LegendItem(
+                                color: Colors.blue,
+                                label: 'Today',
+                                isBorder: true,
+                              ),
+                            ],
                           ),
                         ),
-                      ),
+
+                        // Admin: Add Holiday button
+                        if (isAdmin) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _showAddHolidayDialog(context);
+                                setModalState(() {}); // refresh
+                              },
+                              icon: const Icon(
+                                Icons.celebration,
+                                color: Colors.deepOrange,
+                              ),
+                              label: const Text('Add Holiday'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.deepOrange,
+                                side: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        // Holiday list for this month
+                        Builder(
+                          builder: (context) {
+                            final monthHolidays = holidays.where((h) {
+                              return (h['date'] as String).startsWith(
+                                currentMonthStr,
+                              );
+                            }).toList();
+                            if (monthHolidays.isEmpty) return const SizedBox();
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Holidays This Month',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ...monthHolidays.map((h) {
+                                  final d = DateTime.parse(h['date'] as String);
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.celebration,
+                                      color: Colors.deepOrange,
+                                      size: 20,
+                                    ),
+                                    title: Text(h['name'] as String),
+                                    trailing: Text(
+                                      DateFormat('dd MMM, EEEE').format(d),
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        ),
+
+                        const OvertimeCalculatorCard(),
+                        const SizedBox(height: 30),
+                      ],
                     );
                   },
-                );
-              },
+                ),
+              ],
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _LegendItem(color: Colors.green, label: 'Present'),
-                  _LegendItem(color: Colors.orange, label: 'Incomplete'),
-                  _LegendItem(
-                    color: Colors.blue,
-                    label: 'Today',
-                    isBorder: true,
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _showAddHolidayDialog(BuildContext context) async {
+  DateTime? pickedDate;
+  final nameController = TextEditingController();
+  final formKey = GlobalKey<FormState>();
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: const Text('Add Holiday'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () async {
+                  final date = await showDatePicker(
+                    context: ctx,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime(2025),
+                    lastDate: DateTime(2030, 12, 31),
+                  );
+                  if (date != null) {
+                    setDialogState(() => pickedDate = date);
+                  }
+                },
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Date',
+                    prefixIcon: Icon(Icons.calendar_today),
+                    border: OutlineInputBorder(),
                   ),
-                ],
+                  child: Text(
+                    pickedDate != null
+                        ? DateFormat('dd MMM yyyy').format(pickedDate!)
+                        : 'Select date',
+                    style: TextStyle(
+                      color: pickedDate != null ? null : Colors.grey,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const OvertimeCalculatorCard(),
-            const SizedBox(height: 30),
-          ],
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Holiday Name',
+                  prefixIcon: Icon(Icons.celebration),
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Enter name' : null,
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (pickedDate == null) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Please select a date')),
+                );
+                return;
+              }
+              if (!formKey.currentState!.validate()) return;
+
+              final dateStr = DateFormat('yyyy-MM-dd').format(pickedDate!);
+              await DatabaseHelper.instance.addHoliday(
+                dateStr,
+                nameController.text.trim(),
+              );
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Holiday added successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
+            child: const Text('Add'),
+          ),
+        ],
       ),
     ),
   );
@@ -1832,9 +2112,6 @@ Widget _buildServiceCard(
         case 'Additional Expenses':
           _showExpenseApprovalsService(context, mqttClient);
           break;
-        case 'Holiday Calendar':
-          Navigator.pushNamed(context, HolidayCalendarScreen.id);
-          break;
         default:
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${service['title']} service coming soon!')),
@@ -2556,10 +2833,12 @@ Widget _leaveTrackerView(
         const SizedBox(height: 20),
 
         // Paid Leave Balance Tracker (Large Card Only)
-        FutureBuilder<Map<String, dynamic>?>(
-          future: DatabaseHelper.instance.getUser(),
-          builder: (context, userSnapshot) {
-            final empId = userSnapshot.data?['emp_id'] ?? 'AMP-001';
+        FutureBuilder<SharedPreferences>(
+          future: SharedPreferences.getInstance(),
+          builder: (context, prefsSnapshot) {
+            if (!prefsSnapshot.hasData) return const SizedBox.shrink();
+            final empId =
+                prefsSnapshot.data!.getString('employee_id') ?? 'AMP-001';
             final year = DateTime.now().year;
 
             return FutureBuilder<int>(

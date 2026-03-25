@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import '../services/mqtt_handler.dart';
-import '../components/attendance_card.dart';
 import 'admin_attendance_screen.dart';
 import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
 import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
-import 'holiday_calendar_screen.dart';
 import 'welcome_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
@@ -103,13 +101,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Your Attendance',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            const AttendanceCard(),
-            const SizedBox(height: 24),
-            const Text(
               'Management Services',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
@@ -163,13 +154,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   Icons.location_on_outlined,
                   Colors.red,
                   () => Navigator.pushNamed(context, AdminLocationScreen.id),
-                ),
-                _buildServiceCard(
-                  context,
-                  'Holiday Calendar',
-                  Icons.celebration_outlined,
-                  Colors.deepOrange,
-                  () => Navigator.pushNamed(context, HolidayCalendarScreen.id),
                 ),
               ],
             ),

@@ -16,10 +16,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _idController = TextEditingController();
-  
+  final TextEditingController _passwordController = TextEditingController();
+
   String _selectedRole = 'Employee';
   bool _isLoading = false;
   double _opacity = 0.0;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -33,11 +35,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _nameController.dispose();
     _idController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
+  // Developer-set admin password
+  static const String _adminPassword = 'Ampere@2025';
+
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Verify admin password
+    if (_selectedRole == 'Admin') {
+      if (_passwordController.text != _adminPassword) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid admin password. Contact your developer.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
 
     setState(() => _isLoading = true);
 
@@ -45,14 +65,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final String name = _nameController.text.trim();
       final String empId = _idController.text.trim();
 
-      final bool success = await DatabaseHelper.instance.registerUserWithNameIdRole(name, empId, _selectedRole);
+      final bool success = await DatabaseHelper.instance
+          .registerUserWithNameIdRole(name, empId, _selectedRole);
 
       if (success) {
         // Persist session locally
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('employee_id', empId);
         await prefs.setString('employee_name', name);
-        await prefs.setString('employee_role', _selectedRole); // Save role for session logic
+        await prefs.setString(
+          'employee_role',
+          _selectedRole,
+        ); // Save role for session logic
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -62,12 +86,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          
+
           // Route based on role
           if (_selectedRole == 'Admin') {
-            Navigator.pushNamedAndRemoveUntil(context, AdminDashboard.id, (route) => false);
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              AdminDashboard.id,
+              (route) => false,
+            );
           } else {
-            Navigator.pushNamedAndRemoveUntil(context, HomePage.id, (route) => false);
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              HomePage.id,
+              (route) => false,
+            );
           }
         }
       } else {
@@ -84,7 +116,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error during registration: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error during registration: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -123,15 +158,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 children: <Widget>[
                   const SizedBox(height: 20),
                   IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.primary, size: 20),
+                    icon: Icon(
+                      Icons.arrow_back_ios_new,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const SizedBox(height: 30),
                   Text(
                     'Create Account',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                  const Text('Sign up to start tracking your work.', style: TextStyle(fontSize: 16, color: Colors.grey)),
+                  const Text(
+                    'Sign up to start tracking your work.',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
                   const SizedBox(height: 40),
                   Form(
                     key: _formKey,
@@ -141,7 +187,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           controller: _nameController,
                           hint: 'Full Name',
                           icon: Icons.person_outline,
-                          validator: (v) => v!.isEmpty ? 'Enter your name' : null,
+                          validator: (v) =>
+                              v!.isEmpty ? 'Enter your name' : null,
                         ),
                         const SizedBox(height: 20.0),
                         _buildTextField(
@@ -153,6 +200,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 20.0),
                         _buildRoleDropdown(),
+                        if (_selectedRole == 'Admin') ...[
+                          const SizedBox(height: 20.0),
+                          _buildPasswordField(),
+                        ],
                         const SizedBox(height: 40.0),
                         _buildRegisterButton(),
                       ],
@@ -172,14 +223,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required String hint,
     required IconData icon,
     TextInputType? type,
-    String? Function(String?)? validator
+    String? Function(String?)? validator,
   }) {
     final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: TextFormField(
         controller: controller,
@@ -189,7 +246,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           hintText: hint,
           prefixIcon: Icon(icon, color: theme.colorScheme.primary, size: 22),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 18,
+            horizontal: 20,
+          ),
         ),
       ),
     );
@@ -202,12 +262,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: DropdownButtonFormField<String>(
         initialValue: _selectedRole,
         decoration: InputDecoration(
-          icon: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
+          icon: Icon(
+            Icons.admin_panel_settings_outlined,
+            color: theme.colorScheme.primary,
+          ),
           border: InputBorder.none,
         ),
         items: ['Employee', 'Admin', 'Trainee'].map((role) {
@@ -220,24 +289,87 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  Widget _buildPasswordField() {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: _passwordController,
+        obscureText: _obscurePassword,
+        validator: (v) =>
+            v == null || v.isEmpty ? 'Enter admin password' : null,
+        decoration: InputDecoration(
+          hintText: 'Admin Password',
+          prefixIcon: Icon(
+            Icons.lock_outline,
+            color: theme.colorScheme.primary,
+            size: 22,
+          ),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+              size: 20,
+            ),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 18,
+            horizontal: 20,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRegisterButton() {
     return Container(
       width: double.infinity,
       height: 58,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(colors: [Color(0xff21b409), Color(0xff1565C0)]),
+        gradient: const LinearGradient(
+          colors: [Color(0xff21b409), Color(0xff1565C0)],
+        ),
       ),
       child: ElevatedButton(
         onPressed: _isLoading ? null : _handleRegister,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
         ),
         child: _isLoading
-            ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : const Text('REGISTER', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.5)),
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Text(
+                'REGISTER',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 1.5,
+                ),
+              ),
       ),
     );
   }

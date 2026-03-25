@@ -18,7 +18,6 @@ import './screens/employee_edit_screen.dart';
 import './screens/travel_attendance_screen.dart';
 import './screens/additional_expenses_screen.dart';
 import './screens/employee_expense_submission_screen.dart';
-import './screens/holiday_calendar_screen.dart';
 import 'database/db_helper.dart';
 
 void main() async {
@@ -100,7 +99,6 @@ class MyApp extends StatelessWidget {
             const AdditionalExpensesScreen(),
         EmployeeExpenseSubmissionScreen.id: (context) =>
             const EmployeeExpenseSubmissionScreen(),
-        HolidayCalendarScreen.id: (context) => const HolidayCalendarScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == HomePage.id) {
