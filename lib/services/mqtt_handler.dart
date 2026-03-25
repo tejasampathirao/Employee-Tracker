@@ -36,10 +36,6 @@ class MqttHandler {
   final String expenseTravelTopic = 'employee/tracker/expenses/travel';
   final String expenseMaterialTopic = 'employee/tracker/expenses/material';
 
-  // Registration Topics
-  final String registerCheckTopic = 'employee/register/check';
-  final String registerResponseTopic = 'employee/register/response';
-
   MqttHandler._internal() {
     _initializeClient();
   }
@@ -466,80 +462,6 @@ class MqttHandler {
       'MQTT DEBUG [Material Expense]: Sending Payload: $jsonString',
     );
     publish(expenseMaterialTopic, jsonString);
-  }
-
-  /// Sends emp_id to server for registration validation.
-  /// Returns a Future that completes with the server response.
-  /// Response map contains: {status: "allowed"/"denied"/"error", reason: "...", emp_id: "..."}
-  Future<Map<String, dynamic>> checkRegistration({
-    required String empId,
-    required String name,
-  }) async {
-    final String requestId = _uuid.v4();
-    final Map<String, dynamic> payload = {
-      "type": "register_check",
-      "request_id": requestId,
-      "emp_id": empId,
-      "name": name,
-      "timestamp": DateTime.now().toIso8601String(),
-    };
-
-    // Ensure connected
-    bool isConnected = await connect();
-    if (!isConnected) {
-      return {
-        "status": "error",
-        "reason": "Cannot connect to server. Please check your network.",
-      };
-    }
-
-    // Subscribe to response topic if not already
-    subscribe(registerResponseTopic);
-
-    // Set up a completer to wait for the response
-    final completer = Completer<Map<String, dynamic>>();
-
-    // Listen for the response matching our request_id
-    StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>? responseSub;
-    responseSub = client.updates?.listen((
-      List<MqttReceivedMessage<MqttMessage>>? messages,
-    ) {
-      if (messages == null) return;
-      for (final message in messages) {
-        if (message.topic == registerResponseTopic) {
-          final recMess = message.payload as MqttPublishMessage;
-          final content = MqttPublishPayload.bytesToStringAsString(
-            recMess.payload.message,
-          );
-          try {
-            final response = jsonDecode(content) as Map<String, dynamic>;
-            if (response['request_id'] == requestId && !completer.isCompleted) {
-              completer.complete(response);
-              responseSub?.cancel();
-            }
-          } catch (_) {}
-        }
-      }
-    });
-
-    // Publish the check request
-    final String jsonString = jsonEncode(payload);
-    AppLogger.log('MQTT DEBUG [Register Check]: Sending Payload: $jsonString');
-    publish(registerCheckTopic, jsonString);
-
-    // Wait for response with a timeout
-    try {
-      final result = await completer.future.timeout(
-        const Duration(seconds: 10),
-      );
-      return result;
-    } on TimeoutException {
-      responseSub?.cancel();
-      return {
-        "status": "error",
-        "reason": "Server did not respond in time. Please try again.",
-      };
-    }
   }
 
   // --- Core MQTT Logic ---
