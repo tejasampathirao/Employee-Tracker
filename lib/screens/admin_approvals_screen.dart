@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
 import 'dart:convert';
 import '../database/db_helper.dart';
 import '../services/mqtt_handler.dart';
@@ -13,30 +12,21 @@ class AdminApprovalsScreen extends StatefulWidget {
 }
 
 class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
-  StreamSubscription? _mqttSubscription;
+  late Future<List<Map<String, dynamic>>> _approvalsFuture;
 
   @override
   void initState() {
     super.initState();
-    _connectAndListen();
+    _loadApprovals();
   }
 
-  void _connectAndListen() async {
-    await MqttHandler().connect();
-    _setupMqttListener();
-  }
-
-  void _setupMqttListener() {
-    _mqttSubscription = MqttHandler().updates?.listen((messages) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+  void _loadApprovals() {
+    _approvalsFuture = DatabaseHelper.instance.getUnifiedPendingApprovals();
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _mqttSubscription?.cancel();
     super.dispose();
   }
 
@@ -76,7 +66,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
       status: status,
     );
 
-    setState(() {});
+    _loadApprovals();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -99,11 +89,11 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          setState(() {});
-          await Future.delayed(const Duration(milliseconds: 500));
+          _loadApprovals();
+          await Future.delayed(const Duration(milliseconds: 300));
         },
         child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: DatabaseHelper.instance.getUnifiedPendingApprovals(),
+          future: _approvalsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());

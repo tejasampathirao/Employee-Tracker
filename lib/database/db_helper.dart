@@ -396,10 +396,15 @@ class DatabaseHelper {
   Future<int> insertExpenseRecord(Map<String, dynamic> payload) async {
     final db = await instance.database;
     // Handles Food, Fuel, Travel, and Material via category
+    final String rawDate =
+        payload['timestamp'] ?? DateTime.now().toIso8601String();
+    final String dateOnly = rawDate.contains('T')
+        ? rawDate.split('T')[0]
+        : rawDate;
     return await db.insert('employee_expenses', {
       'request_id': payload['request_id'],
       'employee_id': payload['employee_id'] ?? 'Unknown',
-      'date': payload['timestamp'] ?? DateTime.now().toIso8601String(),
+      'date': dateOnly,
       'expense_category': payload['category'] ?? payload['type'] ?? 'General',
       'description': payload['description'] ?? '',
       'amount': payload['amount'] ?? 0.0,
@@ -415,7 +420,7 @@ class DatabaseHelper {
 
     // Fetch pending leaves with real_employee_id via JOIN on users table
     final List<Map<String, dynamic>> leaves = await db.rawQuery('''
-      SELECT l.*, u.emp_id as real_employee_id 
+      SELECT l.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM leave_requests l 
       LEFT JOIN users u ON l.employee_id = u.name 
       WHERE l.status = 'Pending'
@@ -423,7 +428,7 @@ class DatabaseHelper {
 
     // Fetch pending expenses with real_employee_id via JOIN on users table
     final List<Map<String, dynamic>> expenses = await db.rawQuery('''
-      SELECT e.*, u.emp_id as real_employee_id 
+      SELECT e.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM employee_expenses e 
       LEFT JOIN users u ON e.employee_id = u.name 
       WHERE e.status = 'Pending'
@@ -465,19 +470,20 @@ class DatabaseHelper {
     if (fromDate != null && toDate != null) {
       leaveWhere += " AND l.from_date >= ? AND l.from_date <= ?";
       leaveArgs.addAll([fromDate, toDate]);
-      expenseWhere += " AND e.date >= ? AND e.date <= ?";
+      expenseWhere +=
+          " AND substr(e.date, 1, 10) >= ? AND substr(e.date, 1, 10) <= ?";
       expenseArgs.addAll([fromDate, toDate]);
     }
 
     final List<Map<String, dynamic>> leaves = await db.rawQuery('''
-      SELECT l.*, u.emp_id as real_employee_id 
+      SELECT l.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM leave_requests l 
       LEFT JOIN users u ON l.employee_id = u.name 
       WHERE $leaveWhere
     ''', leaveArgs);
 
     final List<Map<String, dynamic>> expenses = await db.rawQuery('''
-      SELECT e.*, u.emp_id as real_employee_id 
+      SELECT e.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM employee_expenses e 
       LEFT JOIN users u ON e.employee_id = u.name 
       WHERE $expenseWhere
