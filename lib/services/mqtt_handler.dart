@@ -14,7 +14,7 @@ class MqttHandler {
 
   late MqttServerClient client;
   final String broker =
-      '10.0.2.2'; // Android Emulator alias for host machine's localhost
+      '192.168.0.193'; // Android Emulator alias for host machine's localhost
   final int port = 1883;
   final _uuid = const Uuid();
 

@@ -111,6 +111,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
+              childAspectRatio: 0.85,
               children: [
                 _buildServiceCard(
                   context,
