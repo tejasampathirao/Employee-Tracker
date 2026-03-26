@@ -44,7 +44,14 @@ void main() async {
   });
 
   // Initialize background geofence service (foreground service for auto-checkout)
-  await BackgroundGeofenceService.initialize();
+  // Wrapped in try-catch so a service init failure doesn't prevent the app from launching
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      await BackgroundGeofenceService.initialize();
+    } catch (_) {
+      // Service init failed — app still launches, background monitoring unavailable
+    }
+  }
 
   // Set window size for Desktop platforms ONLY
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
