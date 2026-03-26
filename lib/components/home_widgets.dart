@@ -212,8 +212,7 @@ Widget _buildGreetingSection() {
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
-      final String name =
-          snapshot.data?['name']?.toString() ?? 'Srinivas Reddy';
+      final String name = snapshot.data?['name']?.toString() ?? 'Employee';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1336,7 +1335,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
 
                         // Fetch user info for MQTT payload
                         final user = await DatabaseHelper.instance.getUser();
-                        final String employeeId = user?['name'] ?? 'Teja';
+                        final String employeeId = user?['name'] ?? 'Unknown';
 
                         // Publish via MQTT with route info (Office as source)
                         mqttClient.publishTravelExpense(
@@ -1486,7 +1485,7 @@ void _showWorkService(BuildContext context, MqttHandler mqttClient) {
 
                     // MQTT Publishing Only
                     final user = await DatabaseHelper.instance.getUser();
-                    final String employeeId = user?['name'] ?? 'Teja';
+                    final String employeeId = user?['name'] ?? 'Unknown';
 
                     mqttClient.publishDailyWorkLog(
                       description: descController.text,
@@ -1577,7 +1576,7 @@ void _generateWorkReport(BuildContext context, MqttHandler mqttClient) async {
 
     // Fetch user info for MQTT payload
     final user = await DatabaseHelper.instance.getUser();
-    final String employeeId = user?['name'] ?? 'Teja';
+    final String employeeId = user?['name'] ?? 'Unknown';
 
     // REQUIREMENT: Publish Work Report Event via MQTT
     mqttClient.publishWorkReport(
@@ -1787,7 +1786,7 @@ void _showExpenseApprovalsService(
 
     // Fetch user info for MQTT payload
     final user = await DatabaseHelper.instance.getUser();
-    final String employeeId = user?['name'] ?? 'Teja';
+    final String employeeId = user?['name'] ?? 'Unknown';
 
     // Publish via MQTT using new specialized helper function
     mqttClient.publishAdditionalExpense(
@@ -2254,9 +2253,7 @@ Widget profileView(
   return FutureBuilder<Map<String, dynamic>?>(
     future: DatabaseHelper.instance.getUser(),
     builder: (context, snapshot) {
-      final user =
-          snapshot.data ??
-          {'name': 'Srinivas Reddy', 'details': 'Chief Financial Officer'};
+      final user = snapshot.data ?? {'name': 'Employee', 'details': 'Employee'};
 
       return ListView(
         padding: const EdgeInsets.all(16),
@@ -2304,10 +2301,8 @@ Widget profileView(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ProfileEditScreen(
-                    currentName: user['name']?.toString() ?? 'Teja',
-                    currentDetails:
-                        user['details']?.toString() ??
-                        'Chief Financial Officer',
+                    currentName: user['name']?.toString() ?? 'Employee',
+                    currentDetails: user['details']?.toString() ?? 'Employee',
                   ),
                 ),
               );
@@ -2838,7 +2833,7 @@ Widget _leaveTrackerView(
           builder: (context, prefsSnapshot) {
             if (!prefsSnapshot.hasData) return const SizedBox.shrink();
             final empId =
-                prefsSnapshot.data!.getString('employee_id') ?? 'AMP-001';
+                prefsSnapshot.data!.getString('employee_id') ?? 'Unknown';
             final year = DateTime.now().year;
 
             return FutureBuilder<int>(
@@ -2986,7 +2981,7 @@ Future<void> _showApplyLeaveForm(
 
   // Fetch user and lock status before showing bottom sheet
   final user = await DatabaseHelper.instance.getUser();
-  final String empId = user?['emp_id'] ?? 'AMP-001';
+  final String empId = user?['emp_id'] ?? 'Unknown';
   final bool isPaidLeaveLocked = await DatabaseHelper.instance
       .hasUsedPaidLeaveThisMonth(empId);
 
@@ -3130,7 +3125,7 @@ Future<void> _showApplyLeaveForm(
 
                       // Fetch user info for MQTT payload and database check
                       final user = await DatabaseHelper.instance.getUser();
-                      final String employeeId = user?['emp_id'] ?? 'AMP-001';
+                      final String employeeId = user?['emp_id'] ?? 'Unknown';
 
                       // Gatekeeper Logic: One Paid Leave per Month
                       if (selectedLeaveType == 'Paid Leave') {
@@ -3168,7 +3163,7 @@ Future<void> _showApplyLeaveForm(
                       leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
 
-                      final String employeeName = user?['name'] ?? 'Teja';
+                      final String employeeName = user?['name'] ?? 'Unknown';
 
                       // Publish using standardized helper function
                       mqttClient.publishLeaveRequest(

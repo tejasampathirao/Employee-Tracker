@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/home.dart';
 import '../screens/admin_dashboard.dart';
 import '../database/db_helper.dart';
+import '../services/mqtt_handler.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -69,6 +70,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
           .registerUserWithNameIdRole(name, empId, _selectedRole);
 
       if (success) {
+        // Publish to MQTT server
+        MqttHandler().publishEmployeeDetails(
+          empId: empId,
+          name: name,
+          role: _selectedRole,
+        );
+
         // Persist session locally
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('employee_id', empId);

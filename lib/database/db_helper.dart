@@ -172,19 +172,6 @@ class DatabaseHelper {
   Future _createDB(Database db, int version) async {
     await _createTables(db);
 
-    await db.insert('users', {
-      'id': 1,
-      'name': 'Teja',
-      'emp_id': 'EMP001',
-      'employee_id': 'EMP001',
-      'details': 'Chief Financial Officer',
-      'phone': '9876543210',
-      'password': 'password123',
-      'email': 'srinivas@example.com',
-      'role': 'Admin',
-      'is_active': 1,
-    });
-
     await db.insert('sites', {
       'name': 'Head Office',
       'lat': 12.9716,
@@ -1275,7 +1262,19 @@ class DatabaseHelper {
     );
 
     if (existing.isNotEmpty) {
-      return false; // ID already registered
+      final isActive = existing.first['is_active'] as int? ?? 1;
+      if (isActive == 1) {
+        return false; // Active employee — ID already registered
+      }
+
+      // Reactivate deactivated employee with new details
+      await db.update(
+        'users',
+        {'name': name, 'role': role, 'details': role, 'is_active': 1},
+        where: 'emp_id = ?',
+        whereArgs: [empId],
+      );
+      return true;
     }
 
     // Insert new user with role and employee_id
