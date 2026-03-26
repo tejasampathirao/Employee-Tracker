@@ -196,8 +196,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT UNIQUE,
             employee_id TEXT,
-            start_date TEXT,
-            end_date TEXT,
+            leave_type TEXT,
+            from_date TEXT,
+            to_date TEXT,
             reason TEXT,
             status TEXT DEFAULT 'Pending'
         )
@@ -497,17 +498,18 @@ def on_message(client, userdata, msg):
         # --- LEAVE REQUESTS (employee/tracker/hr/leaves) ---
         elif msg_type == 'leave_request':
             cursor.execute('''
-                INSERT OR IGNORE INTO leave_requests (request_id, employee_id, start_date, end_date, reason, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO leave_requests (request_id, employee_id, leave_type, from_date, to_date, reason, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 payload.get('request_id'),               # Unique leave request ID
                 payload.get('employee_id'),              # Who is requesting leave
+                payload.get('leave_type', 'Leave'),      # Leave type (Paid/Earned/Sick)
                 payload.get('from_date'),                # Leave start date
                 payload.get('to_date'),                  # Leave end date
                 payload.get('reason'),                   # Reason for leave
                 payload.get('status', 'Pending')         # Status, defaults to "Pending"
             ))
-            print(f"Leave request synced: {payload.get('request_id')}")
+            print(f"Leave request synced: {payload.get('request_id')} - {payload.get('leave_type')}")
 
         # --- EXPENSES (employee/tracker/expenses) ---
         # Handles: expense_claim, travel_expense, additional_expense, expense_request

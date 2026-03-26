@@ -1108,12 +1108,39 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
     final db = await instance.database;
-    return await db.query(
+
+    // Query remote leave_requests table
+    final remoteLeaves = await db.query(
       'leave_requests',
       where: 'status = ?',
       whereArgs: ['Pending'],
       orderBy: 'id DESC',
     );
+
+    // Query local leaves table
+    final localLeaves = await db.query(
+      'leaves',
+      where: 'status = ?',
+      whereArgs: ['Pending'],
+      orderBy: 'id DESC',
+    );
+
+    // Normalize local leaves to match leave_requests column names
+    final normalizedLocal = localLeaves.map((l) {
+      return {
+        ...l,
+        'leave_type': l['leaveType'] ?? l['leave_type'] ?? 'Leave',
+        'from_date': l['fromDate'] ?? l['from_date'] ?? '',
+        'to_date': l['toDate'] ?? l['to_date'] ?? '',
+        'source': 'local',
+      };
+    }).toList();
+
+    final normalizedRemote = remoteLeaves.map((l) {
+      return {...l, 'source': 'remote'};
+    }).toList();
+
+    return [...normalizedRemote, ...normalizedLocal];
   }
 
   Future<int> updateLeaveRequestStatus(int id, String status) async {

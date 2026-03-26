@@ -12,6 +12,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../utils/app_logger.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import '../services/background_geofence_service.dart';
 
 class AttendanceCard extends StatefulWidget {
   final VoidCallback? onActionComplete;
@@ -136,12 +138,14 @@ class _AttendanceCardState extends State<AttendanceCard>
         lat: position.latitude,
         lng: position.longitude,
         employeeId: empId,
+        empstatus: 'checkout',
       );
     } catch (e) {
       AppLogger.log("AUTO-CHECKOUT: Failed to publish MQTT: $e");
     }
 
     _cancelShiftEndReminder();
+    BackgroundGeofenceService.stopMonitoring(); // Cancel background service
     _timer?.cancel();
 
     // Show notification so employee knows they were auto-checked-out
@@ -306,9 +310,20 @@ class _AttendanceCardState extends State<AttendanceCard>
         _checkInTime = checkInTime;
         _startTimer();
       });
-      _startGeofenceMonitoring(); // Resume monitoring
-      // Resume location tracking if already checked in
-      // Note: We might need to handle the MQTT client migration here too
+      _startGeofenceMonitoring(); // Resume foreground stream
+
+      // Resume background foreground service
+      final prefs = await SharedPreferences.getInstance();
+      final empId = prefs.getString('employee_id') ?? 'Unknown';
+      BackgroundGeofenceService.startMonitoring(
+        attendanceId: _currentAttendanceId!,
+        employeeId: empId,
+      );
+
+      // Listen for auto-checkout events from the background service
+      FlutterBackgroundService().on('auto_checkout_done').listen((_) {
+        _loadLastAttendance();
+      });
     }
   }
 
@@ -362,7 +377,7 @@ class _AttendanceCardState extends State<AttendanceCard>
         );
 
         // STRICT GEOFENCE ENFORCEMENT
-        if (distance > 100) {
+        if (distance > kGeofenceRadiusMeter) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -422,6 +437,10 @@ class _AttendanceCardState extends State<AttendanceCard>
         });
         _startTimer();
         _startGeofenceMonitoring(); // Start geofencing stream immediately
+        BackgroundGeofenceService.startMonitoring(
+          attendanceId: id,
+          employeeId: empId,
+        ); // Background foreground service
 
         // Requirement 2: Schedule 5:30 PM reminder on Check-In
         _scheduleShiftEndReminder();
@@ -458,6 +477,7 @@ class _AttendanceCardState extends State<AttendanceCard>
         if (_currentAttendanceId != null && _checkInTime != null) {
           _positionStream
               ?.cancel(); // STOP monitoring immediately on manual checkout
+          BackgroundGeofenceService.stopMonitoring(); // Stop background service
 
           Duration worked = now.difference(_checkInTime!);
           // DATABASE LOGIC: Explicitly save strings
@@ -485,6 +505,7 @@ class _AttendanceCardState extends State<AttendanceCard>
             lat: position.latitude,
             lng: position.longitude,
             employeeId: empId,
+            empstatus: 'checkout',
           );
 
           // Requirement 3: Cancel 5:30 PM reminder on Check-Out

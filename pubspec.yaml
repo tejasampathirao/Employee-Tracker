@@ -33,6 +33,10 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.3.2
   
+  # Background Tasks
+  flutter_background_service: ^5.0.5     # Foreground service for geofence monitoring
+  flutter_background_service_android: ^6.2.2
+
   # Hardware and Location
   geolocator: ^13.0.2    # GPS for employee check-ins
   google_maps_flutter: ^2.10.0

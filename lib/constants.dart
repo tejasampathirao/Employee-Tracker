@@ -24,7 +24,7 @@ const kTextStyleForm = TextStyle(
 // Geofencing Constants
 const double kOfficeLatitude = 13.0022; // Example:Office
 const double kOfficeLongitude = 77.4965;
-const double kGeofenceRadiusMeter = 100.0; // 100 meters radius
+const double kGeofenceRadiusMeter = 100.0; // 50 meters radius
 
 // Shift Timing Constants
 const int kShiftEndHour = 17; // 5 PM
