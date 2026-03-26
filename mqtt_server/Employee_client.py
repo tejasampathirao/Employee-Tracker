@@ -643,29 +643,52 @@ def on_message(client, userdata, msg):
         elif msg_type == 'employee_details':
             emp_id = payload.get('emp_id', '')
             # Check if employee already exists
-            cursor.execute('SELECT id FROM users WHERE emp_id = ?', (emp_id,))
+            cursor.execute('SELECT id, is_active FROM users WHERE emp_id = ?', (emp_id,))
             existing = cursor.fetchone()
 
             if existing:
-                # Update existing employee
-                cursor.execute('''
-                    UPDATE users SET name = ?, role = ?, details = ?
-                    WHERE emp_id = ?
-                ''', (
-                    payload.get('name', ''),
-                    payload.get('role', 'Employee'),
-                    json.dumps({
-                        'pan_no': payload.get('pan_no', ''),
-                        'aadhar_no': payload.get('aadhar_no', ''),
-                        'bank_acc_no': payload.get('bank_acc_no', ''),
-                        'ifsc_code': payload.get('ifsc_code', ''),
-                        'father_name': payload.get('father_name', ''),
-                        'mother_name': payload.get('mother_name', ''),
-                        'salary': payload.get('salary', 0.0),
-                    }),
-                    emp_id
-                ))
-                print(f"Employee details UPDATED: {emp_id} - {payload.get('name')}")
+                is_active = existing[1] if existing[1] is not None else 1
+
+                if is_active == 1:
+                    # Active employee — update details only
+                    cursor.execute('''
+                        UPDATE users SET name = ?, role = ?, details = ?
+                        WHERE emp_id = ?
+                    ''', (
+                        payload.get('name', ''),
+                        payload.get('role', 'Employee'),
+                        json.dumps({
+                            'pan_no': payload.get('pan_no', ''),
+                            'aadhar_no': payload.get('aadhar_no', ''),
+                            'bank_acc_no': payload.get('bank_acc_no', ''),
+                            'ifsc_code': payload.get('ifsc_code', ''),
+                            'father_name': payload.get('father_name', ''),
+                            'mother_name': payload.get('mother_name', ''),
+                            'salary': payload.get('salary', 0.0),
+                        }),
+                        emp_id
+                    ))
+                    print(f"Employee details UPDATED: {emp_id} - {payload.get('name')}")
+                else:
+                    # Deactivated employee — reactivate with new details
+                    cursor.execute('''
+                        UPDATE users SET name = ?, role = ?, details = ?, is_active = 1
+                        WHERE emp_id = ?
+                    ''', (
+                        payload.get('name', ''),
+                        payload.get('role', 'Employee'),
+                        json.dumps({
+                            'pan_no': payload.get('pan_no', ''),
+                            'aadhar_no': payload.get('aadhar_no', ''),
+                            'bank_acc_no': payload.get('bank_acc_no', ''),
+                            'ifsc_code': payload.get('ifsc_code', ''),
+                            'father_name': payload.get('father_name', ''),
+                            'mother_name': payload.get('mother_name', ''),
+                            'salary': payload.get('salary', 0.0),
+                        }),
+                        emp_id
+                    ))
+                    print(f"Employee REACTIVATED: {emp_id} - {payload.get('name')}")
             else:
                 # Insert new employee
                 cursor.execute('''
