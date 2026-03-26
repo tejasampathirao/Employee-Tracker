@@ -19,6 +19,7 @@ import './screens/travel_attendance_screen.dart';
 import './screens/additional_expenses_screen.dart';
 import './screens/employee_expense_submission_screen.dart';
 import 'database/db_helper.dart';
+import 'services/background_geofence_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,16 @@ void main() async {
   DatabaseHelper.instance.database.then((db) {
     DatabaseHelper.instance.seedData();
   });
+
+  // Initialize background geofence service (foreground service for auto-checkout)
+  // Wrapped in try-catch so a service init failure doesn't prevent the app from launching
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      await BackgroundGeofenceService.initialize();
+    } catch (_) {
+      // Service init failed — app still launches, background monitoring unavailable
+    }
+  }
 
   // Set window size for Desktop platforms ONLY
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {

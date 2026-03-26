@@ -90,11 +90,13 @@ class MqttHandler {
     required double lat,
     required double lng,
     required String employeeId,
+    String empstatus = 'checkin',
   }) {
     final Map<String, dynamic> payload = {
       "type": "attendance",
       "request_id": _uuid.v4(),
       "status": status,
+      "empstatus": empstatus,
       "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
       "location": {"lat": lat, "lng": lng},
