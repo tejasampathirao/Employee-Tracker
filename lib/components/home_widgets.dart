@@ -3155,17 +3155,12 @@ Future<void> _showApplyLeaveForm(
                         'appliedDate': DateTime.now().toIso8601String(),
                       };
 
-                      int id = await DatabaseHelper.instance.insertLeave(
-                        leaveData,
-                      );
-
                       // Append to Report File
-                      leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
 
                       final String employeeName = user?['name'] ?? 'Unknown';
 
-                      // Publish using standardized helper function
+                      // Publish using standardized helper function (will be inserted via MQTT)
                       mqttClient.publishLeaveRequest(
                         selectedLeaveType,
                         fromDateController.text,

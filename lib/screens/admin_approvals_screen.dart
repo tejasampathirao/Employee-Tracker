@@ -43,6 +43,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final id = item['id'];
     final type = item['approval_type'];
     final employeeId = item['employee_id'];
+    final realEmployeeId = item['real_employee_id'] ?? employeeId; // Use emp_id for topic
     final now = DateTime.now().toIso8601String();
 
     if (type == 'leave') {
@@ -63,7 +64,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     };
 
     MqttHandler().publish(
-      'employee/tracker/status/$employeeId',
+      'employee/tracker/status/$realEmployeeId',
       jsonEncode(statusPayload),
     );
 
