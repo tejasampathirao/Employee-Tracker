@@ -58,7 +58,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final Map<String, dynamic> statusPayload = {
       "type": "status_update",
       "category": category,
-      "id": (item['request_id'] ?? id).toString(),
+      "id": id.toString(),
       "status": status,
     };
 
