@@ -76,6 +76,7 @@ class MqttHandler {
       "from_date": fromDate,
       "to_date": toDate,
       "reason": reason,
+      "timestamp": DateTime.now().toIso8601String(),
       "employee_id": employeeId,
     };
 
@@ -302,14 +303,16 @@ class MqttHandler {
   void publishAdminAttendance({
     required String employeeId,
     required String checkInTime,
-    required String date,
+    required double lat,
+    required double lng,
   }) {
     final Map<String, dynamic> payload = {
       "type": "admin_attendance",
       "request_id": _uuid.v4(),
       "employee_id": employeeId,
       "check_in_time": checkInTime,
-      "date": date,
+      "lat": lat,
+      "lng": lng,
       "timestamp": DateTime.now().toIso8601String(),
     };
 
@@ -350,6 +353,7 @@ class MqttHandler {
     required String empId,
     required String name,
     required String role,
+    String? phoneNo,
     String? panNo,
     String? aadharNo,
     String? bankAccNo,
@@ -364,6 +368,7 @@ class MqttHandler {
       "emp_id": empId,
       "name": name,
       "role": role,
+      "mobile_no": phoneNo ?? '',
       "pan_no": panNo ?? '',
       "aadhar_no": aadharNo ?? '',
       "bank_acc_no": bankAccNo ?? '',
