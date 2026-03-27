@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -1390,18 +1391,32 @@ class DatabaseHelper {
   }
 
   Future<Map<String, dynamic>?> getUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('employee_id');
+    
+    if (empId == null || empId.isEmpty) {
+      return null;
+    }
+    
     final db = await instance.database;
-    final result = await db.query('users', where: 'id = ?', whereArgs: [1]);
+    final result = await db.query('users', where: 'emp_id = ?', whereArgs: [empId]);
     return result.isNotEmpty ? result.first : null;
   }
 
   Future<int> updateUserProfile(String name, String details) async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('employee_id');
+    
+    if (empId == null || empId.isEmpty) {
+      return 0;
+    }
+    
     final db = await instance.database;
     return await db.update(
       'users',
       {'name': name, 'details': details},
-      where: 'id = ?',
-      whereArgs: [1],
+      where: 'emp_id = ?',
+      whereArgs: [empId],
     );
   }
 
