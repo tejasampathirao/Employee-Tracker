@@ -2911,11 +2911,18 @@ Widget _leaveTrackerView(
 
         const SizedBox(height: 24),
         const Text(
-          'Pending Requests',
+          'Leave Requests',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         _buildPendingLeavesList(),
+        const SizedBox(height: 24),
+        const Text(
+          'Expense Requests',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        _buildExpenseRequestsList(),
       ],
     ),
   );
@@ -2934,6 +2941,12 @@ Widget _buildPendingLeavesList() {
         itemCount: snapshot.data!.length,
         itemBuilder: (context, index) {
           final item = snapshot.data![index];
+          final status = item['status'] as String? ?? 'Pending';
+          final Color statusColor = status == 'Approved'
+              ? Colors.green
+              : status == 'Rejected'
+              ? Colors.red
+              : Colors.orange;
           return Card(
             elevation: 0,
             margin: const EdgeInsets.only(bottom: 8),
@@ -2955,15 +2968,80 @@ Widget _buildPendingLeavesList() {
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               subtitle: Text('${item['from_date']} to ${item['to_date']}'),
-              trailing: const Text(
-                'Pending',
+              trailing: Text(
+                status,
                 style: TextStyle(
-                  color: Colors.orange,
+                  color: statusColor,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
               ),
             ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Widget _buildExpenseRequestsList() {
+  return FutureBuilder<SharedPreferences>(
+    future: SharedPreferences.getInstance(),
+    builder: (context, prefsSnapshot) {
+      if (!prefsSnapshot.hasData) return const SizedBox.shrink();
+      final empId = prefsSnapshot.data!.getString('employee_id') ?? 'Unknown';
+      return FutureBuilder<List<Map<String, dynamic>>>(
+        future: DatabaseHelper.instance.getMyExpenseRequests(empId),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return _buildEmptyState('No expense requests');
+          }
+          return ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: snapshot.data!.length,
+            itemBuilder: (context, index) {
+              final item = snapshot.data![index];
+              final status = item['status'] as String? ?? 'Pending';
+              final Color statusColor = status == 'Approved'
+                  ? Colors.green
+                  : status == 'Rejected'
+                  ? Colors.red
+                  : Colors.orange;
+              return Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.grey[200]!),
+                ),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.green[50],
+                    child: const Icon(
+                      Icons.receipt_long,
+                      color: Colors.green,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    item['expense_category'] ?? 'Expense',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    '${item['date'] ?? ''} • ₹${item['amount'] ?? 0}',
+                  ),
+                  trailing: Text(
+                    status,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              );
+            },
           );
         },
       );
@@ -3155,15 +3233,8 @@ Future<void> _showApplyLeaveForm(
                         'appliedDate': DateTime.now().toIso8601String(),
                       };
 
-                      int id = await DatabaseHelper.instance.insertLeave(
-                        leaveData,
-                      );
-
                       // Append to Report File
-                      leaveData['id'] = id;
                       await ReportService.appendLeaveToReport(leaveData);
-
-                      final String employeeName = user?['name'] ?? 'Unknown';
 
                       // Publish using standardized helper function
                       mqttClient.publishLeaveRequest(
@@ -3171,7 +3242,7 @@ Future<void> _showApplyLeaveForm(
                         fromDateController.text,
                         toDateController.text,
                         reasonController.text,
-                        employeeName,
+                        employeeId,
                       );
 
                       if (context.mounted) {
