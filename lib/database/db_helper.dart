@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 26, // Bumped to 26 to add holidays table
+      version: 27, // Bumped to 27 to add approved_by and approved_at columns
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -31,6 +31,22 @@ class DatabaseHelper {
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Force creation of tables if they are missing
     await _createTables(db);
+
+    if (oldVersion < 27) {
+      final tables = ['employee_expenses', 'leave_requests'];
+      for (var table in tables) {
+        try {
+          await db.execute('ALTER TABLE $table ADD COLUMN approved_by TEXT');
+        } catch (e) {
+          debugPrint("Note: $table approved_by column already exists or error: $e");
+        }
+        try {
+          await db.execute('ALTER TABLE $table ADD COLUMN approved_at TEXT');
+        } catch (e) {
+          debugPrint("Note: $table approved_at column already exists or error: $e");
+        }
+      }
+    }
 
     if (oldVersion < 26) {
       await _seedDefaultHolidays(db);
@@ -249,7 +265,9 @@ class DatabaseHelper {
         status TEXT DEFAULT 'Pending',
         latitude REAL,
         longitude REAL,
-        distance REAL
+        distance REAL,
+        approved_by TEXT,
+        approved_at TEXT
       )
     ''');
 
@@ -265,7 +283,9 @@ class DatabaseHelper {
         status TEXT DEFAULT 'Pending',
         latitude REAL,
         longitude REAL,
-        distance REAL
+        distance REAL,
+        approved_by TEXT,
+        approved_at TEXT
       )
     ''');
 
@@ -989,11 +1009,14 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> updateExpenseStatus(int id, String status) async {
+  Future<int> updateExpenseStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
     final db = await instance.database;
+    final values = <String, dynamic>{'status': status};
+    if (approvedBy != null) values['approved_by'] = approvedBy;
+    if (approvedAt != null) values['approved_at'] = approvedAt;
     return await db.update(
       'employee_expenses',
-      {'status': status},
+      values,
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -1143,11 +1166,14 @@ class DatabaseHelper {
     return [...normalizedRemote, ...normalizedLocal];
   }
 
-  Future<int> updateLeaveRequestStatus(int id, String status) async {
+  Future<int> updateLeaveRequestStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
     final db = await instance.database;
+    final values = <String, dynamic>{'status': status};
+    if (approvedBy != null) values['approved_by'] = approvedBy;
+    if (approvedAt != null) values['approved_at'] = approvedAt;
     return await db.update(
       'leave_requests',
-      {'status': status},
+      values,
       where: 'id = ?',
       whereArgs: [id],
     );

@@ -313,6 +313,25 @@ class _ApprovalHistoryScreenState extends State<ApprovalHistoryScreen> {
                 ],
               ),
             ],
+            if (item['approved_by'] != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    item['status'] == 'Approved' ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: item['status'] == 'Approved' ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${item['status']} by ${item['approved_by']}${item['approved_at'] != null ? ' on ${item['approved_at'].toString().split('T')[0]}' : ''}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (item['distance'] != null && (item['distance'] as num) > 0) ...[
               const SizedBox(height: 6),
               Text(

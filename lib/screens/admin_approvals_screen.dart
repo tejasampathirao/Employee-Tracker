@@ -13,16 +13,25 @@ class AdminApprovalsScreen extends StatefulWidget {
 
 class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
   late Future<List<Map<String, dynamic>>> _approvalsFuture;
+  String _adminName = 'Admin';
 
   @override
   void initState() {
     super.initState();
     _loadApprovals();
+    _loadAdminName();
   }
 
   void _loadApprovals() {
     _approvalsFuture = DatabaseHelper.instance.getUnifiedPendingApprovals();
     if (mounted) setState(() {});
+  }
+
+  void _loadAdminName() async {
+    final user = await DatabaseHelper.instance.getUser();
+    if (user != null && mounted) {
+        setState(() { _adminName = user['name'] ?? user['emp_id'] ?? 'Admin'; });
+    }
   }
 
   @override
@@ -34,11 +43,12 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final id = item['id'];
     final type = item['approval_type'];
     final employeeId = item['employee_id'];
+    final now = DateTime.now().toIso8601String();
 
     if (type == 'leave') {
-      await DatabaseHelper.instance.updateLeaveRequestStatus(id, status);
+      await DatabaseHelper.instance.updateLeaveRequestStatus(id, status, approvedBy: _adminName, approvedAt: now);
     } else {
-      await DatabaseHelper.instance.updateExpenseStatus(id, status);
+      await DatabaseHelper.instance.updateExpenseStatus(id, status, approvedBy: _adminName, approvedAt: now);
     }
 
     // Closed-Loop: Notify the Employee via MQTT
@@ -62,7 +72,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
       employeeId: employeeId?.toString() ?? '',
       approvalType: type?.toString() ?? '',
       requestId: id?.toString() ?? '',
-      approvedBy: 'Admin',
+      approvedBy: _adminName,
       status: status,
     );
 

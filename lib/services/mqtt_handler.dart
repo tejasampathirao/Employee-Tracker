@@ -604,11 +604,23 @@ class MqttHandler {
               break;
 
             case 'admin_approval':
-              // Admin approval echoed back — no local action needed
-              // (local DB already updated by the admin who approved)
-              AppLogger.log(
-                'MQTT Sync: Admin approval received for ${payload['employee_id']}',
-              );
+              final approvalType = payload['approval_type'] ?? '';
+              final approvalRequestId = payload['request_id'] ?? '';
+              final newStatus = payload['status'] ?? '';
+              final approvedBy = payload['approved_by'] ?? 'Admin';
+              final approvedAt = payload['timestamp'] ?? DateTime.now().toIso8601String();
+              if (approvalType == 'leave' && approvalRequestId.isNotEmpty) {
+                  final intId = int.tryParse(approvalRequestId);
+                  if (intId != null) {
+                      await DatabaseHelper.instance.updateLeaveRequestStatus(intId, newStatus, approvedBy: approvedBy, approvedAt: approvedAt);
+                  }
+              } else if (approvalType == 'expense' && approvalRequestId.isNotEmpty) {
+                  final intId = int.tryParse(approvalRequestId);
+                  if (intId != null) {
+                      await DatabaseHelper.instance.updateExpenseStatus(intId, newStatus, approvedBy: approvedBy, approvedAt: approvedAt);
+                  }
+              }
+              AppLogger.log('MQTT Sync: Admin approval synced - $approvalType #$approvalRequestId -> $newStatus by $approvedBy');
               break;
 
             case 'employee_details':
