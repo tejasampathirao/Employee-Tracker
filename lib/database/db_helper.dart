@@ -1054,11 +1054,11 @@ class DatabaseHelper {
     final db = await instance.database;
     final currentYear = DateTime.now().year.toString();
 
-    // Check leave_requests table (local leaves no longer inserted)
-    final result = await db.rawQuery(
+    // Check both leave_requests (from admin/MQTT) and local leaves table
+    final remoteResult = await db.rawQuery(
       '''
-      SELECT COUNT(*) as count
-      FROM leave_requests
+      SELECT COUNT(*) as count 
+      FROM leave_requests 
       WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
       AND (leave_type = 'Paid Leave' OR leave_type = 'Casual Leave')
       AND status = 'Approved'
@@ -1067,27 +1067,52 @@ class DatabaseHelper {
       [employeeId, employeeId, '$currentYear-%'],
     );
 
-    return Sqflite.firstIntValue(result) ?? 0;
+    final localResult = await db.rawQuery(
+      '''
+      SELECT COUNT(*) as count 
+      FROM leaves 
+      WHERE (leaveType = 'Paid Leave' OR leaveType = 'Casual Leave')
+      AND status != 'Rejected'
+      AND fromDate LIKE ?
+    ''',
+      ['$currentYear-%'],
+    );
+
+    final remote = Sqflite.firstIntValue(remoteResult) ?? 0;
+    final local = Sqflite.firstIntValue(localResult) ?? 0;
+    return remote > local ? remote : local;
   }
 
   Future<bool> hasUsedPaidLeaveThisMonth(String employeeId) async {
     final db = await instance.database;
     final String currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
 
-    final result = await db.rawQuery(
+    final remoteResult = await db.rawQuery(
       '''
       SELECT COUNT(*) as count 
       FROM leave_requests 
       WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
       AND leave_type = 'Paid Leave'
-      AND status = 'Approved'
+      AND status != 'Rejected'
       AND from_date LIKE ?
     ''',
       [employeeId, employeeId, '$currentMonth-%'],
     );
 
-    int count = Sqflite.firstIntValue(result) ?? 0;
-    return count > 0;
+    final localResult = await db.rawQuery(
+      '''
+      SELECT COUNT(*) as count 
+      FROM leaves 
+      WHERE leaveType = 'Paid Leave'
+      AND status != 'Rejected'
+      AND fromDate LIKE ?
+    ''',
+      ['$currentMonth-%'],
+    );
+
+    int remote = Sqflite.firstIntValue(remoteResult) ?? 0;
+    int local = Sqflite.firstIntValue(localResult) ?? 0;
+    return (remote > 0 || local > 0);
   }
 
   // --- Leave Requests (Admin) ---
@@ -1111,7 +1136,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
     final db = await instance.database;
 
-    // Query remote leave_requests table (local leaves no longer inserted)
+    // Query remote leave_requests table
     final remoteLeaves = await db.query(
       'leave_requests',
       where: 'status = ?',
@@ -1119,12 +1144,30 @@ class DatabaseHelper {
       orderBy: 'id DESC',
     );
 
-    // Normalize remote leaves to match expected format
+    // Query local leaves table
+    final localLeaves = await db.query(
+      'leaves',
+      where: 'status = ?',
+      whereArgs: ['Pending'],
+      orderBy: 'id DESC',
+    );
+
+    // Normalize local leaves to match leave_requests column names
+    final normalizedLocal = localLeaves.map((l) {
+      return {
+        ...l,
+        'leave_type': l['leaveType'] ?? l['leave_type'] ?? 'Leave',
+        'from_date': l['fromDate'] ?? l['from_date'] ?? '',
+        'to_date': l['toDate'] ?? l['to_date'] ?? '',
+        'source': 'local',
+      };
+    }).toList();
+
     final normalizedRemote = remoteLeaves.map((l) {
       return {...l, 'source': 'remote'};
     }).toList();
 
-    return normalizedRemote;
+    return [...normalizedRemote, ...normalizedLocal];
   }
 
   Future<int> updateLeaveRequestStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
@@ -1149,9 +1192,15 @@ class DatabaseHelper {
     final intId = int.tryParse(id) ?? 0;
 
     if (category == 'leave_request') {
-      // Update leave_requests table (local leaves no longer used)
-      return await db.update(
+      // Update both possible leave tables for consistency
+      await db.update(
         'leave_requests',
+        {'status': newStatus},
+        where: 'id = ?',
+        whereArgs: [intId],
+      );
+      return await db.update(
+        'leaves',
         {'status': newStatus},
         where: 'id = ?',
         whereArgs: [intId],
