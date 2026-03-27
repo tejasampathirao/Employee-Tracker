@@ -1118,14 +1118,17 @@ class DatabaseHelper {
   // --- Leave Requests (Admin) ---
   Future<int> insertLeaveRequest(Map<String, dynamic> data) async {
     final db = await instance.database;
-
-    // Remove 'type' key if present in MQTT payload to avoid crash (table has no 'type' column)
-    final Map<String, dynamic> cleanData = Map.from(data);
-    cleanData.remove('type');
-
     return await db.insert(
       'leave_requests',
-      cleanData,
+      {
+        'request_id': data['request_id'],
+        'employee_id': data['employee_id'] ?? 'Unknown',
+        'leave_type': data['leave_type'] ?? 'Leave',
+        'from_date': data['from_date'] ?? '',
+        'to_date': data['to_date'] ?? '',
+        'reason': data['reason'] ?? '',
+        'status': data['status'] ?? 'Pending',
+      },
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
   }
