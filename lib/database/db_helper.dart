@@ -39,12 +39,16 @@ class DatabaseHelper {
         try {
           await db.execute('ALTER TABLE $table ADD COLUMN approved_by TEXT');
         } catch (e) {
-          debugPrint("Note: $table approved_by column already exists or error: $e");
+          debugPrint(
+            "Note: $table approved_by column already exists or error: $e",
+          );
         }
         try {
           await db.execute('ALTER TABLE $table ADD COLUMN approved_at TEXT');
         } catch (e) {
-          debugPrint("Note: $table approved_at column already exists or error: $e");
+          debugPrint(
+            "Note: $table approved_at column already exists or error: $e",
+          );
         }
       }
     }
@@ -430,7 +434,7 @@ class DatabaseHelper {
     final List<Map<String, dynamic>> leaves = await db.rawQuery('''
       SELECT l.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM leave_requests l 
-      LEFT JOIN users u ON l.employee_id = u.name 
+      LEFT JOIN users u ON (l.employee_id = u.name OR l.employee_id = u.emp_id) 
       WHERE l.status = 'Pending'
     ''');
 
@@ -438,7 +442,7 @@ class DatabaseHelper {
     final List<Map<String, dynamic>> expenses = await db.rawQuery('''
       SELECT e.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM employee_expenses e 
-      LEFT JOIN users u ON e.employee_id = u.name 
+      LEFT JOIN users u ON (e.employee_id = u.name OR e.employee_id = u.emp_id) 
       WHERE e.status = 'Pending'
     ''');
 
@@ -486,14 +490,14 @@ class DatabaseHelper {
     final List<Map<String, dynamic>> leaves = await db.rawQuery('''
       SELECT l.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM leave_requests l 
-      LEFT JOIN users u ON l.employee_id = u.name 
+      LEFT JOIN users u ON (l.employee_id = u.name OR l.employee_id = u.emp_id) 
       WHERE $leaveWhere
     ''', leaveArgs);
 
     final List<Map<String, dynamic>> expenses = await db.rawQuery('''
       SELECT e.*, u.emp_id as real_employee_id, u.name as employee_name 
       FROM employee_expenses e 
-      LEFT JOIN users u ON e.employee_id = u.name 
+      LEFT JOIN users u ON (e.employee_id = u.name OR e.employee_id = u.emp_id) 
       WHERE $expenseWhere
     ''', expenseArgs);
 
@@ -1010,7 +1014,12 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> updateExpenseStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
+  Future<int> updateExpenseStatus(
+    int id,
+    String status, {
+    String? approvedBy,
+    String? approvedAt,
+  }) async {
     final db = await instance.database;
     final values = <String, dynamic>{'status': status};
     if (approvedBy != null) values['approved_by'] = approvedBy;
@@ -1072,7 +1081,7 @@ class DatabaseHelper {
       SELECT COUNT(*) as count 
       FROM leaves 
       WHERE (leaveType = 'Paid Leave' OR leaveType = 'Casual Leave')
-      AND status != 'Rejected'
+      AND status = 'Approved'
       AND fromDate LIKE ?
     ''',
       ['$currentYear-%'],
@@ -1093,7 +1102,7 @@ class DatabaseHelper {
       FROM leave_requests 
       WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
       AND leave_type = 'Paid Leave'
-      AND status != 'Rejected'
+      AND status = 'Approved'
       AND from_date LIKE ?
     ''',
       [employeeId, employeeId, '$currentMonth-%'],
@@ -1104,7 +1113,7 @@ class DatabaseHelper {
       SELECT COUNT(*) as count 
       FROM leaves 
       WHERE leaveType = 'Paid Leave'
-      AND status != 'Rejected'
+      AND status = 'Approved'
       AND fromDate LIKE ?
     ''',
       ['$currentMonth-%'],
@@ -1118,59 +1127,29 @@ class DatabaseHelper {
   // --- Leave Requests (Admin) ---
   Future<int> insertLeaveRequest(Map<String, dynamic> data) async {
     final db = await instance.database;
-    return await db.insert(
-      'leave_requests',
-      {
-        'request_id': data['request_id'],
-        'employee_id': data['employee_id'] ?? 'Unknown',
-        'leave_type': data['leave_type'] ?? 'Leave',
-        'from_date': data['from_date'] ?? '',
-        'to_date': data['to_date'] ?? '',
-        'reason': data['reason'] ?? '',
-        'status': data['status'] ?? 'Pending',
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
+    return await db.insert('leave_requests', {
+      'request_id': data['request_id'],
+      'employee_id': data['employee_id'] ?? 'Unknown',
+      'leave_type': data['leave_type'] ?? 'Leave',
+      'from_date': data['from_date'] ?? '',
+      'to_date': data['to_date'] ?? '',
+      'reason': data['reason'] ?? '',
+      'status': data['status'] ?? 'Pending',
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
     final db = await instance.database;
-
-    // Query remote leave_requests table
-    final remoteLeaves = await db.query(
-      'leave_requests',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
-      orderBy: 'id DESC',
-    );
-
-    // Query local leaves table
-    final localLeaves = await db.query(
-      'leaves',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
-      orderBy: 'id DESC',
-    );
-
-    // Normalize local leaves to match leave_requests column names
-    final normalizedLocal = localLeaves.map((l) {
-      return {
-        ...l,
-        'leave_type': l['leaveType'] ?? l['leave_type'] ?? 'Leave',
-        'from_date': l['fromDate'] ?? l['from_date'] ?? '',
-        'to_date': l['toDate'] ?? l['to_date'] ?? '',
-        'source': 'local',
-      };
-    }).toList();
-
-    final normalizedRemote = remoteLeaves.map((l) {
-      return {...l, 'source': 'remote'};
-    }).toList();
-
-    return [...normalizedRemote, ...normalizedLocal];
+    final leaves = await db.query('leave_requests', orderBy: 'id DESC');
+    return leaves;
   }
 
-  Future<int> updateLeaveRequestStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
+  Future<int> updateLeaveRequestStatus(
+    int id,
+    String status, {
+    String? approvedBy,
+    String? approvedAt,
+  }) async {
     final db = await instance.database;
     final values = <String, dynamic>{'status': status};
     if (approvedBy != null) values['approved_by'] = approvedBy;
@@ -1189,40 +1168,58 @@ class DatabaseHelper {
     String newStatus,
   ) async {
     final db = await instance.database;
-    final intId = int.tryParse(id) ?? 0;
 
     if (category == 'leave_request') {
-      // Update both possible leave tables for consistency
-      await db.update(
+      int updated = await db.update(
         'leave_requests',
         {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
+        where: 'request_id = ?',
+        whereArgs: [id],
       );
-      return await db.update(
-        'leaves',
-        {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
-      );
+      if (updated == 0) {
+        final intId = int.tryParse(id) ?? 0;
+        updated = await db.update(
+          'leave_requests',
+          {'status': newStatus},
+          where: 'id = ?',
+          whereArgs: [intId],
+        );
+      }
+      return updated;
     } else if (category == 'expense_claim' ||
         category == 'expense_report' ||
         category == 'expense_request') {
-      // Update both possible expense tables
-      await db.update(
+      int updated = await db.update(
         'employee_expenses',
         {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
+        where: 'request_id = ?',
+        whereArgs: [id],
       );
-      return await db.update(
-        'expenses',
-        {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
-      );
+      if (updated == 0) {
+        final intId = int.tryParse(id) ?? 0;
+        updated = await db.update(
+          'employee_expenses',
+          {'status': newStatus},
+          where: 'id = ?',
+          whereArgs: [intId],
+        );
+      }
+      return updated;
     }
     return 0;
+  }
+
+  Future<List<Map<String, dynamic>>> getMyExpenseRequests(
+    String employeeId,
+  ) async {
+    final db = await instance.database;
+    return await db.query(
+      'employee_expenses',
+      where:
+          'employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?)',
+      whereArgs: [employeeId, employeeId],
+      orderBy: 'id DESC',
+    );
   }
 
   Future<Map<String, dynamic>> getEmployeeAttendanceSummary(
@@ -1396,24 +1393,28 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getUser() async {
     final prefs = await SharedPreferences.getInstance();
     final empId = prefs.getString('employee_id');
-    
+
     if (empId == null || empId.isEmpty) {
       return null;
     }
-    
+
     final db = await instance.database;
-    final result = await db.query('users', where: 'emp_id = ?', whereArgs: [empId]);
+    final result = await db.query(
+      'users',
+      where: 'emp_id = ?',
+      whereArgs: [empId],
+    );
     return result.isNotEmpty ? result.first : null;
   }
 
   Future<int> updateUserProfile(String name, String details) async {
     final prefs = await SharedPreferences.getInstance();
     final empId = prefs.getString('employee_id');
-    
+
     if (empId == null || empId.isEmpty) {
       return 0;
     }
-    
+
     final db = await instance.database;
     return await db.update(
       'users',

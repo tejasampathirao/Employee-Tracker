@@ -30,7 +30,9 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
   void _loadAdminName() async {
     final user = await DatabaseHelper.instance.getUser();
     if (user != null && mounted) {
-        setState(() { _adminName = user['name'] ?? user['emp_id'] ?? 'Admin'; });
+      setState(() {
+        _adminName = user['name'] ?? user['emp_id'] ?? 'Admin';
+      });
     }
   }
 
@@ -46,9 +48,19 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final now = DateTime.now().toIso8601String();
 
     if (type == 'leave') {
-      await DatabaseHelper.instance.updateLeaveRequestStatus(id, status, approvedBy: _adminName, approvedAt: now);
+      await DatabaseHelper.instance.updateLeaveRequestStatus(
+        id,
+        status,
+        approvedBy: _adminName,
+        approvedAt: now,
+      );
     } else {
-      await DatabaseHelper.instance.updateExpenseStatus(id, status, approvedBy: _adminName, approvedAt: now);
+      await DatabaseHelper.instance.updateExpenseStatus(
+        id,
+        status,
+        approvedBy: _adminName,
+        approvedAt: now,
+      );
     }
 
     // Closed-Loop: Notify the Employee via MQTT
@@ -58,7 +70,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final Map<String, dynamic> statusPayload = {
       "type": "status_update",
       "category": category,
-      "id": id.toString(),
+      "id": (item['request_id'] ?? id).toString(),
       "status": status,
     };
 
