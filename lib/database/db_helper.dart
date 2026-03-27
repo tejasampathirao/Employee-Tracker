@@ -1072,7 +1072,7 @@ class DatabaseHelper {
       SELECT COUNT(*) as count 
       FROM leaves 
       WHERE (leaveType = 'Paid Leave' OR leaveType = 'Casual Leave')
-      AND status != 'Rejected'
+      AND status = 'Approved'
       AND fromDate LIKE ?
     ''',
       ['$currentYear-%'],
@@ -1104,7 +1104,7 @@ class DatabaseHelper {
       SELECT COUNT(*) as count 
       FROM leaves 
       WHERE leaveType = 'Paid Leave'
-      AND status != 'Rejected'
+      AND status = 'Approved'
       AND fromDate LIKE ?
     ''',
       ['$currentMonth-%'],
@@ -1136,38 +1136,13 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
     final db = await instance.database;
 
-    // Query remote leave_requests table
-    final remoteLeaves = await db.query(
+    // Single source of truth: leave_requests table (populated via MQTT)
+    final leaves = await db.query(
       'leave_requests',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
       orderBy: 'id DESC',
     );
 
-    // Query local leaves table
-    final localLeaves = await db.query(
-      'leaves',
-      where: 'status = ?',
-      whereArgs: ['Pending'],
-      orderBy: 'id DESC',
-    );
-
-    // Normalize local leaves to match leave_requests column names
-    final normalizedLocal = localLeaves.map((l) {
-      return {
-        ...l,
-        'leave_type': l['leaveType'] ?? l['leave_type'] ?? 'Leave',
-        'from_date': l['fromDate'] ?? l['from_date'] ?? '',
-        'to_date': l['toDate'] ?? l['to_date'] ?? '',
-        'source': 'local',
-      };
-    }).toList();
-
-    final normalizedRemote = remoteLeaves.map((l) {
-      return {...l, 'source': 'remote'};
-    }).toList();
-
-    return [...normalizedRemote, ...normalizedLocal];
+    return leaves;
   }
 
   Future<int> updateLeaveRequestStatus(int id, String status, {String? approvedBy, String? approvedAt}) async {
@@ -1189,38 +1164,54 @@ class DatabaseHelper {
     String newStatus,
   ) async {
     final db = await instance.database;
-    final intId = int.tryParse(id) ?? 0;
 
     if (category == 'leave_request') {
-      // Update both possible leave tables for consistency
-      await db.update(
+      // Try by request_id first (UUID), then fall back to integer id
+      int updated = await db.update(
         'leave_requests',
         {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
+        where: 'request_id = ?',
+        whereArgs: [id],
       );
-      return await db.update(
-        'leaves',
-        {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
-      );
+      if (updated == 0) {
+        final intId = int.tryParse(id) ?? 0;
+        updated = await db.update(
+          'leave_requests',
+          {'status': newStatus},
+          where: 'id = ?',
+          whereArgs: [intId],
+        );
+      }
+      // Also update local leaves table by id (best effort)
+      final intId = int.tryParse(id) ?? 0;
+      if (intId > 0) {
+        await db.update(
+          'leaves',
+          {'status': newStatus},
+          where: 'id = ?',
+          whereArgs: [intId],
+        );
+      }
+      return updated;
     } else if (category == 'expense_claim' ||
         category == 'expense_report' ||
         category == 'expense_request') {
-      // Update both possible expense tables
-      await db.update(
+      int updated = await db.update(
         'employee_expenses',
         {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
+        where: 'request_id = ?',
+        whereArgs: [id],
       );
-      return await db.update(
-        'expenses',
-        {'status': newStatus},
-        where: 'id = ?',
-        whereArgs: [intId],
-      );
+      if (updated == 0) {
+        final intId = int.tryParse(id) ?? 0;
+        updated = await db.update(
+          'employee_expenses',
+          {'status': newStatus},
+          where: 'id = ?',
+          whereArgs: [intId],
+        );
+      }
+      return updated;
     }
     return 0;
   }

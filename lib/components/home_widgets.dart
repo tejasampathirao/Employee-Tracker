@@ -3155,12 +3155,8 @@ Future<void> _showApplyLeaveForm(
                         'appliedDate': DateTime.now().toIso8601String(),
                       };
 
-                      int id = await DatabaseHelper.instance.insertLeave(
-                        leaveData,
-                      );
-
-                      // Append to Report File
-                      leaveData['id'] = id;
+                      // Removed: insertLeave() — the MQTT echo-back will insert into leave_requests
+                      // keeping leaveData for the report
                       await ReportService.appendLeaveToReport(leaveData);
 
                       final String employeeName = user?['name'] ?? 'Unknown';
@@ -3171,7 +3167,7 @@ Future<void> _showApplyLeaveForm(
                         fromDateController.text,
                         toDateController.text,
                         reasonController.text,
-                        employeeName,
+                        employeeId,
                       );
 
                       if (context.mounted) {
