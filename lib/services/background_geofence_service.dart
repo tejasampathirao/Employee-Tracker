@@ -15,7 +15,9 @@ import '../database/db_helper.dart';
 import '../constants.dart';
 
 class BackgroundGeofenceService {
-  /// Call once from main() to configure the service (does NOT start it).
+  static bool _initialized = false;
+
+  /// Configure the service. Called lazily before first startMonitoring().
   static Future<void> initialize() async {
     // Create the notification channel BEFORE configure() — required on Android 8.0+
     final flnPlugin = FlutterLocalNotificationsPlugin();
@@ -50,6 +52,7 @@ class BackgroundGeofenceService {
         initialNotificationContent: 'Monitoring office geofence…',
       ),
     );
+    _initialized = true;
   }
 
   /// Start the foreground service after a successful check-in.
@@ -57,6 +60,11 @@ class BackgroundGeofenceService {
     required int attendanceId,
     required String employeeId,
   }) async {
+    // Ensure service is configured before starting
+    if (!_initialized) {
+      await initialize();
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('bg_checked_in', true);
     await prefs.setInt('bg_attendance_id', attendanceId);

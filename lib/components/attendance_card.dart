@@ -417,7 +417,8 @@ class _AttendanceCardState extends State<AttendanceCard>
         mqttService.publishAdminAttendance(
           employeeId: empId,
           checkInTime: timeString,
-          date: dateString,
+          lat: position.latitude,
+          lng: position.longitude,
         );
 
         if (mounted) {
