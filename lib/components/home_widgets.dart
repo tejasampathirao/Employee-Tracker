@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
-import '../screens/welcome_screen.dart';
 import 'attendance_card.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
@@ -2327,7 +2326,7 @@ Widget profileView(
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
                   context,
-                  WelcomeScreen.id,
+                  LoginScreen.id,
                   (route) => false,
                 );
               }

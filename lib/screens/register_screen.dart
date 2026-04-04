@@ -19,7 +19,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _idController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  String _selectedRole = 'Employee';
+  final String _selectedRole = 'Admin'; // Fixed to Admin
   bool _isLoading = false;
   double _opacity = 0.0;
   bool _obscurePassword = true;
@@ -46,18 +46,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Verify admin password
-    if (_selectedRole == 'Admin') {
-      if (_passwordController.text != _adminPassword) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid admin password. Contact your developer.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
+    // Verify developer admin password
+    if (_passwordController.text != _adminPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid developer authentication password.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
     }
 
     setState(() => _isLoading = true);
@@ -81,40 +79,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('employee_id', empId);
         await prefs.setString('employee_name', name);
-        await prefs.setString(
-          'employee_role',
-          _selectedRole,
-        ); // Save role for session logic
+        await prefs.setString('user_role', _selectedRole);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registered successfully! Welcome aboard.'),
+              content: Text('Admin registered successfully!'),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
             ),
           );
 
-          // Route based on role
-          if (_selectedRole == 'Admin') {
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              AdminDashboard.id,
-              (route) => false,
-            );
-          } else {
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              HomePage.id,
-              (route) => false,
-            );
-          }
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            AdminDashboard.id,
+            (route) => false,
+          );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Employee ID already exists. Please log in.'),
+              content: Text('Admin ID already exists. Please log in.'),
               backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
             ),
@@ -149,7 +135,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.green[900]!.withValues(alpha: 0.05),
+              Colors.blue[900]!.withValues(alpha: 0.05),
               Colors.white,
               Colors.blue[50]!.withValues(alpha: 0.3),
             ],
@@ -175,7 +161,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 30),
                   Text(
-                    'Create Account',
+                    'Admin Registration',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -183,7 +169,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                   const Text(
-                    'Sign up to start tracking your work.',
+                    'Setup your administrator account.',
                     style: TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                   const SizedBox(height: 40),
@@ -193,25 +179,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       children: <Widget>[
                         _buildTextField(
                           controller: _nameController,
-                          hint: 'Full Name',
+                          hint: 'Admin Name',
                           icon: Icons.person_outline,
                           validator: (v) =>
-                              v!.isEmpty ? 'Enter your name' : null,
+                              v!.isEmpty ? 'Enter admin name' : null,
                         ),
                         const SizedBox(height: 20.0),
                         _buildTextField(
                           controller: _idController,
-                          hint: 'Employee ID (e.g., AMP-001)',
+                          hint: 'Admin ID / Username',
                           icon: Icons.badge_outlined,
                           type: TextInputType.text,
-                          validator: (v) => v!.isEmpty ? 'Enter your ID' : null,
+                          validator: (v) => v!.isEmpty ? 'Enter admin ID' : null,
                         ),
                         const SizedBox(height: 20.0),
-                        _buildRoleDropdown(),
-                        if (_selectedRole == 'Admin') ...[
-                          const SizedBox(height: 20.0),
-                          _buildPasswordField(),
-                        ],
+                        _buildPasswordField(),
                         const SizedBox(height: 40.0),
                         _buildRegisterButton(),
                       ],
@@ -263,40 +245,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildRoleDropdown() {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: DropdownButtonFormField<String>(
-        initialValue: _selectedRole,
-        decoration: InputDecoration(
-          icon: Icon(
-            Icons.admin_panel_settings_outlined,
-            color: theme.colorScheme.primary,
-          ),
-          border: InputBorder.none,
-        ),
-        items: ['Employee', 'Admin', 'Trainee'].map((role) {
-          return DropdownMenuItem(value: role, child: Text(role));
-        }).toList(),
-        onChanged: (v) {
-          if (v != null) setState(() => _selectedRole = v);
-        },
-      ),
-    );
-  }
-
   Widget _buildPasswordField() {
     final theme = Theme.of(context);
     return Container(
@@ -315,9 +263,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         controller: _passwordController,
         obscureText: _obscurePassword,
         validator: (v) =>
-            v == null || v.isEmpty ? 'Enter admin password' : null,
+            v == null || v.isEmpty ? 'Enter developer password' : null,
         decoration: InputDecoration(
-          hintText: 'Admin Password',
+          hintText: 'Developer Auth Password',
           prefixIcon: Icon(
             Icons.lock_outline,
             color: theme.colorScheme.primary,
@@ -348,7 +296,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: const LinearGradient(
-          colors: [Color(0xff21b409), Color(0xff1565C0)],
+          colors: [Color(0xff1565C0), Color(0xff0D47A1)],
         ),
       ),
       child: ElevatedButton(
@@ -370,7 +318,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               )
             : const Text(
-                'REGISTER',
+                'REGISTER ADMIN',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

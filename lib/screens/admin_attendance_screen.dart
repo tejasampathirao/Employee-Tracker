@@ -174,7 +174,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Admin Attendance & OT'),
+        title: const Text('Working Time Slot & OT'),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,

@@ -7,7 +7,6 @@ import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
 import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
-import 'welcome_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
@@ -38,7 +37,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        WelcomeScreen.id,
+        LoginScreen.id,
         (route) => false,
       );
     }
@@ -115,7 +114,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 _buildServiceCard(
                   context,
-                  'Attendance',
+                  'Working Time Slot',
                   Icons.timer_outlined,
                   Colors.orange,
                   () => Navigator.pushNamed(context, AdminAttendanceScreen.id),

@@ -79,10 +79,11 @@ class MyApp extends StatelessWidget {
           seedColor: Colors.blue,
           primary: Colors.blue[800]!,
         ),
+        scaffoldBackgroundColor: Colors.white,
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      initialRoute: WelcomeScreen.id,
+      initialRoute: LoginScreen.id,
       routes: {
         WelcomeScreen.id: (context) => const WelcomeScreen(),
         LoginScreen.id: (context) => const LoginScreen(),

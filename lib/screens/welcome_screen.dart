@@ -1,131 +1,115 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../components/rounded_button.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
-import 'home.dart';
-import 'admin_dashboard.dart';
 
-class WelcomeScreen extends StatefulWidget {
+class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
   static const String id = 'welcome_screen';
 
   @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
-}
-
-class _WelcomeScreenState extends State<WelcomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkExistingSession();
-    });
-  }
-
-  Future<void> _checkExistingSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final empId = prefs.getString('employee_id');
-    final role = prefs.getString('user_role');
-
-    if (empId != null && empId.isNotEmpty && role != null) {
-      if (!mounted) return;
-      if (role == 'Admin') {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AdminDashboard.id,
-          (route) => false,
-        );
-      } else {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          HomePage.id,
-          (route) => false,
-        );
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue[50]!, Colors.white],
-          ),
-        ),
+      backgroundColor: Colors.white,
+      body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 30.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Spacer(flex: 2),
-              Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text.rich(
-                    TextSpan(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const SizedBox(height: 40),
+              // Top Logo Section
+              Column(
+                children: [
+                  Image.asset(
+                    'images/app_logo.png',
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Column(
                       children: [
-                        TextSpan(
-                          text: 'EMPLOYEE ',
+                        const Icon(Icons.business, size: 80, color: Colors.blue),
+                        const SizedBox(height: 10),
+                        Text(
+                          'AMPEREPLUS',
                           style: TextStyle(
                             fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.bold,
                             color: Colors.blue[900],
-                            letterSpacing: 0.5,
                           ),
                         ),
-                        TextSpan(
-                          text: 'TRACKER',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w300,
-                            color: Colors.green[700],
-                            letterSpacing: 0.5,
-                          ),
+                        const Text(
+                          'Engineering & Services',
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
                         ),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 10),
-              const Center(
+
+              // Middle Buttons Section
+              Column(
+                children: [
+                  _buildButton(
+                    context,
+                    label: 'Log In',
+                    color: const Color(0xff1565C0), // Professional Blue
+                    onPressed: () => Navigator.pushNamed(context, LoginScreen.id),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildButton(
+                    context,
+                    label: 'Register',
+                    color: const Color(0xff2E7D32), // Professional Green
+                    onPressed: () => Navigator.pushNamed(context, RegisterScreen.id),
+                  ),
+                ],
+              ),
+
+              // Bottom Footer
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Professional HR Management Solution',
-                  style: TextStyle(color: Colors.blueGrey, fontSize: 14),
+                  '© 2026 AmperePlus Engineering. All Rights Reserved.',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
-              const Spacer(flex: 1),
-              const SizedBox(height: 48.0),
-              RoundedButton(
-                title: 'Log In',
-                colour: Colors.blue[800]!,
-                onPressed: () {
-                  Navigator.pushNamed(context, LoginScreen.id);
-                },
-              ),
-              const SizedBox(height: 12),
-              RoundedButton(
-                title: 'Register',
-                colour: const Color(0xff21b409),
-                onPressed: () {
-                  Navigator.pushNamed(context, RegisterScreen.id);
-                },
-              ),
-              const Spacer(flex: 2),
-              const Center(
-                child: Text(
-                  'Employee Tracker',
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ),
-              const SizedBox(height: 20),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButton(
+    BuildContext context, {
+    required String label,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.0,
           ),
         ),
       ),
