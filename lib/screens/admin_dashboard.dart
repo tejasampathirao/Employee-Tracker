@@ -9,7 +9,6 @@ import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'admin_leave_management_screen.dart';
-import 'admin_ot_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
 
@@ -164,13 +163,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   Colors.teal,
                   () =>
                       Navigator.pushNamed(context, AdminLeaveManagementScreen.id),
-                ),
-                _buildServiceCard(
-                  context,
-                  'OT Calculator',
-                  Icons.more_time,
-                  Colors.deepOrange,
-                  () => Navigator.pushNamed(context, AdminOTScreen.id),
                 ),
               ],
             ),
