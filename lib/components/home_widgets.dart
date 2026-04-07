@@ -162,14 +162,74 @@ Widget homeListView(
 ) {
   return SingleChildScrollView(
     physics: const BouncingScrollPhysics(),
-    padding: const EdgeInsets.all(16.0),
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), // Added bottom padding to prevent overflow
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(mqttClient, updateState),
         const SizedBox(height: 20),
         _buildGreetingSection(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: DatabaseHelper.instance.getUpcomingHolidays(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final holiday = snapshot.data!.first;
+            String dateText = holiday['date'];
+            if (holiday['start_date'] != null && holiday['end_date'] != null) {
+              try {
+                final start = DateTime.parse(holiday['start_date']);
+                final end = DateTime.parse(holiday['end_date']);
+                dateText =
+                    '${DateFormat('MMM d').format(start)} - ${DateFormat('MMM d').format(end)}';
+              } catch (_) {}
+            }
+            return Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.teal[200]!),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_available, color: Colors.teal),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Upcoming Holiday',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.teal,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          holiday['name'],
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          dateText,
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
         AttendanceCard(onActionComplete: () => updateState()),
         const SizedBox(height: 24),
         _buildDashboardSectionTitle(
@@ -397,7 +457,7 @@ Widget servicesView(
   return Scaffold(
     backgroundColor: Colors.transparent,
     body: SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), // Added bottom padding to prevent overflow
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2244,13 +2304,34 @@ Widget _buildSystemControls(
 }
 
 // --- PROFILE VIEW ---
+Future<Map<String, dynamic>?> _loadCurrentProfile() async {
+  final prefs = await SharedPreferences.getInstance();
+  final empId = prefs.getString('employee_id')?.trim();
+
+  final user = await DatabaseHelper.instance.getUser();
+  if (user != null) {
+    return user;
+  }
+
+  if (empId == null || empId.isEmpty) {
+    return null;
+  }
+
+  final String? name = prefs.getString('employee_name');
+  final String? role = prefs.getString('user_role');
+  return {
+    'name': name ?? 'Employee',
+    'details': role ?? 'Employee',
+  };
+}
+
 Widget profileView(
   BuildContext context,
   MqttHandler mqttClient,
   Function onUpdate,
 ) {
   return FutureBuilder<Map<String, dynamic>?>(
-    future: DatabaseHelper.instance.getUser(),
+    future: _loadCurrentProfile(),
     builder: (context, snapshot) {
       final user = snapshot.data ?? {'name': 'Employee', 'details': 'Employee'};
 

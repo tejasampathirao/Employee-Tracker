@@ -34,6 +34,12 @@ class _AttendanceCardState extends State<AttendanceCard>
       FlutterLocalNotificationsPlugin();
   late MqttHandler mqttService;
 
+  // Dynamic shift times
+  int _shiftStartHour = 9;
+  int _shiftStartMinute = 0;
+  int _shiftEndHour = 17;
+  int _shiftEndMinute = 0;
+
   // Geofencing and History logic
   StreamSubscription<Position>? _positionStream;
 
@@ -42,6 +48,7 @@ class _AttendanceCardState extends State<AttendanceCard>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeNotifications();
+    _loadShiftTimes();
     _loadLastAttendance();
     _setupMqtt();
   }
@@ -213,14 +220,14 @@ class _AttendanceCardState extends State<AttendanceCard>
       now.year,
       now.month,
       now.day + 1,
-      9,
-      0,
-    ); // 9:00 AM tomorrow
+      _shiftStartHour,
+      _shiftStartMinute,
+    ); // Next shift start
 
     await flutterLocalNotificationsPlugin.zonedSchedule(
       0,
       'Upcoming Shift',
-      'Your next shift starts at 9:00 AM. Get ready!',
+      'Your next shift starts at $_shiftStartHour:${_shiftStartMinute.toString().padLeft(2, '0')}. Get ready!',
       tz.TZDateTime.from(scheduledDate, tz.local),
       const NotificationDetails(
         android: AndroidNotificationDetails(
@@ -237,18 +244,18 @@ class _AttendanceCardState extends State<AttendanceCard>
     );
   }
 
-  // Requirement 2: Schedule Reminder for 5:30 PM
+  // Requirement 2: Schedule Reminder for shift end
   Future<void> _scheduleShiftEndReminder() async {
     final now = DateTime.now();
     var scheduledDate = DateTime(
       now.year,
       now.month,
       now.day,
-      17,
-      30,
-    ); // 5:30 PM Today
+      _shiftEndHour,
+      _shiftEndMinute,
+    );
 
-    // If it's already past 5:30 PM, don't schedule for today
+    // If it's already past shift end, don't schedule for today
     if (now.isAfter(scheduledDate)) return;
 
     await flutterLocalNotificationsPlugin.zonedSchedule(
@@ -325,6 +332,19 @@ class _AttendanceCardState extends State<AttendanceCard>
         _loadLastAttendance();
       });
     }
+  }
+
+  Future<void> _loadShiftTimes() async {
+    final fromTime = await DatabaseHelper.instance.getShiftFromTime();
+    final toTime = await DatabaseHelper.instance.getShiftToTime();
+    final fromParts = fromTime.split(':');
+    final toParts = toTime.split(':');
+    setState(() {
+      _shiftStartHour = int.parse(fromParts[0]);
+      _shiftStartMinute = int.parse(fromParts[1]);
+      _shiftEndHour = int.parse(toParts[0]);
+      _shiftEndMinute = int.parse(toParts[1]);
+    });
   }
 
   void _startTimer() {
@@ -443,19 +463,19 @@ class _AttendanceCardState extends State<AttendanceCard>
           employeeId: empId,
         ); // Background foreground service
 
-        // Requirement 2: Schedule 5:30 PM reminder on Check-In
+        // Requirement 2: Schedule shift end reminder on Check-In
         _scheduleShiftEndReminder();
 
         if (widget.onActionComplete != null) widget.onActionComplete!();
       } else {
-        // Prevent manual checkout before shift end time (5:30 PM)
+        // Prevent manual checkout before shift end time
         if (!isAuto) {
           final shiftEnd = DateTime(
             now.year,
             now.month,
             now.day,
-            kShiftEndHour,
-            kShiftEndMinute,
+            _shiftEndHour,
+            _shiftEndMinute,
           );
           if (now.isBefore(shiftEnd)) {
             if (mounted) {
@@ -463,7 +483,7 @@ class _AttendanceCardState extends State<AttendanceCard>
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    'Cannot check out before shift end (5:30 PM). Remaining: ${_formatDuration(remaining)}',
+                    'Cannot check out before shift end ($_shiftEndHour:${_shiftEndMinute.toString().padLeft(2, '0')}). Remaining: ${_formatDuration(remaining)}',
                   ),
                   backgroundColor: Colors.orange,
                   behavior: SnackBarBehavior.floating,
@@ -509,7 +529,7 @@ class _AttendanceCardState extends State<AttendanceCard>
             empstatus: 'checkout',
           );
 
-          // Requirement 3: Cancel 5:30 PM reminder on Check-Out
+          // Requirement 3: Cancel shift end reminder on Check-Out
           _cancelShiftEndReminder();
 
           if (finalStatus == 'Present') {

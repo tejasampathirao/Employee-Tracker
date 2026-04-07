@@ -23,7 +23,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 27, // Bumped to 27 to add approved_by and approved_at columns
+      version: 28, // Bumped to 28 to add start_date and end_date to holidays
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,6 +32,15 @@ class DatabaseHelper {
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Force creation of tables if they are missing
     await _createTables(db);
+
+    if (oldVersion < 28) {
+      try {
+        await db.execute('ALTER TABLE holidays ADD COLUMN start_date TEXT');
+        await db.execute('ALTER TABLE holidays ADD COLUMN end_date TEXT');
+      } catch (e) {
+        debugPrint("Note: holidays date columns already exist or error: $e");
+      }
+    }
 
     if (oldVersion < 27) {
       final tables = ['employee_expenses', 'leave_requests'];
@@ -403,6 +412,28 @@ class DatabaseHelper {
       'longitude': payload['lng'],
       'status': payload['action'] ?? 'Travel Event',
     });
+  }
+
+  Future<int> insertHoliday(Map<String, dynamic> payload) async {
+    final db = await instance.database;
+    return await db.insert('holidays', {
+      'date': (payload['start_date'] ?? payload['date'] as String).split('T')[0],
+      'start_date': payload['start_date'],
+      'end_date': payload['end_date'],
+      'name': payload['reason'] ?? 'Company Holiday',
+      'is_recurring': 0,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getUpcomingHolidays() async {
+    final db = await instance.database;
+    final now = DateTime.now().toIso8601String().split('T')[0];
+    return await db.query(
+      'holidays',
+      where: 'date >= ? OR start_date >= ?',
+      whereArgs: [now, now],
+      orderBy: 'date ASC',
+    );
   }
 
   Future<int> insertExpenseRecord(Map<String, dynamic> payload) async {
@@ -1392,7 +1423,7 @@ class DatabaseHelper {
 
   Future<Map<String, dynamic>?> getUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final empId = prefs.getString('employee_id');
+    final empId = prefs.getString('employee_id')?.trim();
 
     if (empId == null || empId.isEmpty) {
       return null;
@@ -1401,8 +1432,8 @@ class DatabaseHelper {
     final db = await instance.database;
     final result = await db.query(
       'users',
-      where: 'emp_id = ?',
-      whereArgs: [empId],
+      where: 'emp_id = ? OR employee_id = ?',
+      whereArgs: [empId, empId],
     );
     return result.isNotEmpty ? result.first : null;
   }
@@ -1447,7 +1478,11 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getAllEmployees() async {
     final db = await instance.database;
-    return await db.query('users', where: 'is_active = 1', orderBy: 'name ASC');
+    return await db.query(
+      'users',
+      where: 'is_active = 1 AND (role IS NULL OR LOWER(role) != "admin")',
+      orderBy: 'name ASC',
+    );
   }
 
   Future<void> deactivateEmployee(String employeeId) async {
@@ -1458,6 +1493,75 @@ class DatabaseHelper {
       where: 'emp_id = ?',
       whereArgs: [employeeId],
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getAttendanceByEmployee(String empId) async {
+    final db = await instance.database;
+    return await db.query(
+      'attendance',
+      where: 'employee_id = ?',
+      whereArgs: [empId],
+      orderBy: 'date ASC',
+    );
+  }
+
+  Future<Map<String, dynamic>> getEmployeeOTStats(String employeeId) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+
+    // 1. Current Week OT
+    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    final weekStartStr = DateFormat('yyyy-MM-dd').format(weekStart);
+
+    final weeklyRecords = await db.query(
+      'attendance',
+      where: 'employee_id = ? AND date >= ? AND checkOutTime IS NOT NULL',
+      whereArgs: [employeeId, weekStartStr],
+    );
+
+    // 2. Current Month OT
+    final monthStartStr = "${DateFormat('yyyy-MM').format(now)}-01";
+    final monthlyRecords = await db.query(
+      'attendance',
+      where: 'employee_id = ? AND date >= ? AND checkOutTime IS NOT NULL',
+      whereArgs: [employeeId, monthStartStr],
+    );
+
+    int calculateTotalOT(List<Map<String, dynamic>> records) {
+      int totalMinutes = 0;
+      for (var record in records) {
+        final checkOutStr = record['checkOutTime'] as String?;
+        if (checkOutStr != null) {
+          try {
+            final checkOut = DateTime.parse(checkOutStr);
+            // Shift ends at 5:00 PM (17:00)
+            final shiftEnd = DateTime(
+              checkOut.year,
+              checkOut.month,
+              checkOut.day,
+              17,
+              0,
+            );
+
+            if (checkOut.isAfter(shiftEnd)) {
+              final extraMinutes = checkOut.difference(shiftEnd).inMinutes;
+              // Grace period: If extra < 25, OT = 0. Else count all.
+              if (extraMinutes >= 25) {
+                totalMinutes += extraMinutes;
+              }
+            }
+          } catch (e) {
+            debugPrint("Error parsing checkOutTime for OT stats: $e");
+          }
+        }
+      }
+      return totalMinutes;
+    }
+
+    return {
+      'weeklyOTMinutes': calculateTotalOT(weeklyRecords),
+      'monthlyOTMinutes': calculateTotalOT(monthlyRecords),
+    };
   }
 
   Future<int> updateEmployee(Map<String, dynamic> data) async {
@@ -1552,5 +1656,22 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // --- Shift Settings Methods ---
+  Future<String> getShiftFromTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('shift_from_time') ?? '09:00';
+  }
+
+  Future<String> getShiftToTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('shift_to_time') ?? '17:00';
+  }
+
+  Future<void> setShiftTimes(String fromTime, String toTime) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('shift_from_time', fromTime);
+    await prefs.setString('shift_to_time', toTime);
   }
 }

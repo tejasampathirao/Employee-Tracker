@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import '../utils/app_logger.dart';
 
@@ -29,6 +30,9 @@ class MqttHandler {
   final String adminAttendanceTopic = 'admin/attendance';
   final String adminApprovalsTopic = 'admin/approvals';
   final String adminEmployeeDetailsTopic = 'admin/employee/details';
+  final String topicHolidays = 'admin/broadcast/holidays';
+  final String topicOTPayout = 'admin/broadcast/ot_payout';
+  final String topicShiftSettings = 'admin/broadcast/shift_settings';
 
   // Expense Category Topics
   final String expenseFoodTopic = 'employee/tracker/expenses/food';
@@ -471,6 +475,54 @@ class MqttHandler {
     publish(expenseMaterialTopic, jsonString);
   }
 
+  void publishHoliday(
+    DateTime startDate,
+    DateTime endDate,
+    String reason,
+    String adminId,
+  ) {
+    final payload = {
+      "type": "holiday_announcement",
+      "request_id": _uuid.v4(),
+      "start_date": startDate.toIso8601String(),
+      "end_date": endDate.toIso8601String(),
+      "reason": reason,
+      "admin_id": adminId,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+    publish(topicHolidays, jsonEncode(payload));
+  }
+
+  void publishOTPayout(
+    String empId,
+    String period,
+    double hours,
+    double rate,
+    double total,
+  ) {
+    final payload = {
+      "type": "ot_payout",
+      "request_id": _uuid.v4(),
+      "employee_id": empId,
+      "period": period, // e.g., "Weekly" or "Monthly"
+      "ot_hours": hours,
+      "hourly_rate": rate,
+      "total_amount": total,
+      "timestamp": DateTime.now().toIso8601String()
+    };
+    publish(topicOTPayout, jsonEncode(payload));
+  }
+
+  void publishShiftUpdate(String fromTime, String toTime) {
+    final payload = {
+      "type": "shift_update",
+      "from_time": fromTime, // Format: "HH:mm"
+      "to_time": toTime,     // Format: "HH:mm"
+      "timestamp": DateTime.now().toIso8601String()
+    };
+    publish(topicShiftSettings, jsonEncode(payload));
+  }
+
   // --- Core MQTT Logic ---
 
   final Map<String, String> topicMessages = {};
@@ -639,6 +691,31 @@ class MqttHandler {
               AppLogger.log(
                 'MQTT Sync: Skipping individual $type (handled by combined request).',
               );
+              break;
+
+            case 'holiday_announcement':
+              AppLogger.log('MQTT DEBUG: Received new company holiday...');
+              try {
+                await DatabaseHelper.instance.insertHoliday(payload);
+              } catch (e) {
+                AppLogger.log('MQTT ERROR: Failed to save holiday - $e');
+              }
+              break;
+
+            case 'ot_payout':
+              AppLogger.log(
+                'MQTT DEBUG: Received OT Payout notification: ${payload['total_amount']}',
+              );
+              // In a real employee app, we might save this to a payouts table
+              break;
+
+            case 'shift_update':
+              final fromTime = payload['from_time'] ?? '09:00';
+              final toTime = payload['to_time'] ?? '17:00';
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('shift_from_time', fromTime);
+              await prefs.setString('shift_to_time', toTime);
+              AppLogger.log('MQTT Sync: Shift timings updated to $fromTime - $toTime');
               break;
 
             default:
