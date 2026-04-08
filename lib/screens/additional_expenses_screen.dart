@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/mqtt_handler.dart';
 import '../database/db_helper.dart';
 import '../utils/app_logger.dart';
@@ -55,6 +56,68 @@ class _AdditionalExpensesScreenState extends State<AdditionalExpensesScreen> {
       final String employeeId = user != null
           ? (user['emp_id'] ?? 'Unknown')
           : 'Unknown';
+
+      final prefs = await SharedPreferences.getInstance();
+
+      // Validate Food Expense
+      if (hasFood) {
+        final foodAmountValue = double.tryParse(foodAmount.text) ?? 0.0;
+        final foodLimit = prefs.getDouble('food_amt_limit') ?? 0.0;
+        final currentMonthTotal = await DatabaseHelper.instance
+            .getMonthlyExpenseTotal('Food');
+        if (foodLimit > 0 &&
+            (currentMonthTotal + foodAmountValue) > foodLimit) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Monthly Limit Exceeded'),
+                content: const Text(
+                  'Monthly Limit Exceeded! Please contact your administrator.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+          setState(() => _isSubmitting = false);
+          return;
+        }
+      }
+
+      // Validate Fuel Expense
+      if (hasFuel) {
+        final fuelAmountValue = double.tryParse(fuelAmount.text) ?? 0.0;
+        final fuelLimit = prefs.getDouble('fuel_amt_limit') ?? 0.0;
+        final currentMonthTotal = await DatabaseHelper.instance
+            .getMonthlyExpenseTotal('Fuel');
+        if (fuelLimit > 0 &&
+            (currentMonthTotal + fuelAmountValue) > fuelLimit) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Monthly Limit Exceeded'),
+                content: const Text(
+                  'Monthly Limit Exceeded! Please contact your administrator.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+          setState(() => _isSubmitting = false);
+          return;
+        }
+      }
 
       // 4. Submission Logic & MQTT Payload
       final Map<String, dynamic> payload = {

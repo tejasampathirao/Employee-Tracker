@@ -9,6 +9,8 @@ import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
 import 'admin_expenses_list_screen.dart';
 import 'admin_leave_management_screen.dart';
+import 'admin_ot_screen.dart';
+import 'admin_expense_limits_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
 
@@ -143,14 +145,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildServiceCard(
                   context,
-                  'Expenses Service',
-                  Icons.payments_outlined,
-                  Colors.green,
-                  () =>
-                      Navigator.pushNamed(context, AdminExpensesListScreen.id),
-                ),
-                _buildServiceCard(
-                  context,
                   'Location Logs',
                   Icons.location_on_outlined,
                   Colors.red,
@@ -161,8 +155,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Leave Management',
                   Icons.edit_calendar,
                   Colors.teal,
+                  () => Navigator.pushNamed(
+                    context,
+                    AdminLeaveManagementScreen.id,
+                  ),
+                ),
+                _buildServiceCard(
+                  context,
+                  'Expense Limits',
+                  Icons.money_off,
+                  Colors.redAccent,
                   () =>
-                      Navigator.pushNamed(context, AdminLeaveManagementScreen.id),
+                      Navigator.pushNamed(context, AdminExpenseLimitsScreen.id),
                 ),
               ],
             ),

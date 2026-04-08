@@ -417,7 +417,9 @@ class DatabaseHelper {
   Future<int> insertHoliday(Map<String, dynamic> payload) async {
     final db = await instance.database;
     return await db.insert('holidays', {
-      'date': (payload['start_date'] ?? payload['date'] as String).split('T')[0],
+      'date': (payload['start_date'] ?? payload['date'] as String).split(
+        'T',
+      )[0],
       'start_date': payload['start_date'],
       'end_date': payload['end_date'],
       'name': payload['reason'] ?? 'Company Holiday',
@@ -890,27 +892,29 @@ class DatabaseHelper {
       }
 
       if (checkOut != null) {
-        // Step 2: Define the Threshold (5:30 PM on that specific day)
+        final prefs = await SharedPreferences.getInstance();
+        final shiftEndStr = prefs.getString('shift_to_time') ?? '17:00';
+        final otBufferMins = prefs.getInt('ot_buffer') ?? 25;
+        final endParts = shiftEndStr.split(':');
         final shiftEnd = DateTime(
           checkIn.year,
           checkIn.month,
           checkIn.day,
-          17,
-          30,
+          int.parse(endParts[0]),
+          int.parse(endParts[1]),
         );
 
-        // Step 3: Calculate the Difference
-        // Rule: Any work done AFTER 5:30 PM is considered Overtime.
         if (checkOut.isAfter(shiftEnd)) {
-          // If the employee checked in AFTER 5:30 PM, OT only starts from their check-in time.
           final otStartTime = checkIn.isAfter(shiftEnd) ? checkIn : shiftEnd;
-          final double sessionOT =
-              checkOut.difference(otStartTime).inSeconds / 3600.0;
+          final extraMinutes = checkOut.difference(otStartTime).inMinutes;
 
-          final date = row['date'] as String;
-          if (date == todayStr) todayOT += sessionOT;
-          if (checkIn.isAfter(weekAgo)) weekOT += sessionOT;
-          if (checkIn.isAfter(firstOfMonth)) monthOT += sessionOT;
+          if (extraMinutes >= otBufferMins) {
+            final double sessionOT = (extraMinutes - otBufferMins) / 3600.0;
+            final date = row['date'] as String;
+            if (date == todayStr) todayOT += sessionOT;
+            if (checkIn.isAfter(weekAgo)) weekOT += sessionOT;
+            if (checkIn.isAfter(firstOfMonth)) monthOT += sessionOT;
+          }
         }
       }
     }
@@ -1061,6 +1065,43 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<double> getMonthlyExpenseTotal(
+    String category, {
+    String? employeeId,
+  }) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+    final monthEnd = DateTime(
+      now.year,
+      now.month + 1,
+      1,
+    ).subtract(const Duration(days: 1));
+
+    final startDateStr = monthStart.toIso8601String().split('T')[0];
+    final endDateStr = monthEnd.toIso8601String().split('T')[0];
+
+    final result = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(amount), 0.0) as total FROM employee_expenses
+      WHERE expense_category = ? 
+        AND date >= ? 
+        AND date <= ?
+        AND status IN ('Approved', 'Pending')
+        ${employeeId != null ? 'AND employee_id = ?' : ''}
+      ''',
+      employeeId != null
+          ? [category, startDateStr, endDateStr, employeeId]
+          : [category, startDateStr, endDateStr],
+    );
+
+    final total = result.isNotEmpty && result[0]['total'] != null
+        ? (result[0]['total'] as num).toDouble()
+        : 0.0;
+
+    return total;
   }
 
   // --- Live Location Methods ---
@@ -1495,7 +1536,9 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getAttendanceByEmployee(String empId) async {
+  Future<List<Map<String, dynamic>>> getAttendanceByEmployee(
+    String empId,
+  ) async {
     final db = await instance.database;
     return await db.query(
       'attendance',

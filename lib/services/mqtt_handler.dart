@@ -33,6 +33,7 @@ class MqttHandler {
   final String topicHolidays = 'admin/broadcast/holidays';
   final String topicOTPayout = 'admin/broadcast/ot_payout';
   final String topicShiftSettings = 'admin/broadcast/shift_settings';
+  final String topicExpenseLimits = 'admin/broadcast/expense_limits';
 
   // Expense Category Topics
   final String expenseFoodTopic = 'employee/tracker/expenses/food';
@@ -508,19 +509,39 @@ class MqttHandler {
       "ot_hours": hours,
       "hourly_rate": rate,
       "total_amount": total,
-      "timestamp": DateTime.now().toIso8601String()
+      "timestamp": DateTime.now().toIso8601String(),
     };
     publish(topicOTPayout, jsonEncode(payload));
   }
 
-  void publishShiftUpdate(String fromTime, String toTime) {
+  void publishShiftUpdate(
+    String fromTime,
+    String toTime,
+    int checkinBuffer,
+    int otBuffer,
+  ) {
     final payload = {
       "type": "shift_update",
       "from_time": fromTime, // Format: "HH:mm"
-      "to_time": toTime,     // Format: "HH:mm"
-      "timestamp": DateTime.now().toIso8601String()
+      "to_time": toTime, // Format: "HH:mm"
+      "checkin_buffer": checkinBuffer,
+      "ot_buffer": otBuffer,
+      "timestamp": DateTime.now().toIso8601String(),
     };
     publish(topicShiftSettings, jsonEncode(payload));
+  }
+
+  void publishExpenseLimits(Map<String, dynamic> limits) {
+    final payload = {
+      "type": "expense_limits_update",
+      "fuel": limits['fuel'] ?? {"km_limit": 0.0, "amt_limit": 0.0},
+      "food": limits['food'] ?? {"type": "Standard", "amt_limit": 0.0},
+      "material": limits['material'] ?? {"type": "General", "amt_limit": 0.0},
+      "travel":
+          limits['travel'] ?? {"rapido": 0.0, "bus": 0.0, "own_vehicle": 0.0},
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+    publish(topicExpenseLimits, jsonEncode(payload));
   }
 
   // --- Core MQTT Logic ---
@@ -660,19 +681,33 @@ class MqttHandler {
               final approvalRequestId = payload['request_id'] ?? '';
               final newStatus = payload['status'] ?? '';
               final approvedBy = payload['approved_by'] ?? 'Admin';
-              final approvedAt = payload['timestamp'] ?? DateTime.now().toIso8601String();
+              final approvedAt =
+                  payload['timestamp'] ?? DateTime.now().toIso8601String();
               if (approvalType == 'leave' && approvalRequestId.isNotEmpty) {
-                  final intId = int.tryParse(approvalRequestId);
-                  if (intId != null) {
-                      await DatabaseHelper.instance.updateLeaveRequestStatus(intId, newStatus, approvedBy: approvedBy, approvedAt: approvedAt);
-                  }
-              } else if (approvalType == 'expense' && approvalRequestId.isNotEmpty) {
-                  final intId = int.tryParse(approvalRequestId);
-                  if (intId != null) {
-                      await DatabaseHelper.instance.updateExpenseStatus(intId, newStatus, approvedBy: approvedBy, approvedAt: approvedAt);
-                  }
+                final intId = int.tryParse(approvalRequestId);
+                if (intId != null) {
+                  await DatabaseHelper.instance.updateLeaveRequestStatus(
+                    intId,
+                    newStatus,
+                    approvedBy: approvedBy,
+                    approvedAt: approvedAt,
+                  );
+                }
+              } else if (approvalType == 'expense' &&
+                  approvalRequestId.isNotEmpty) {
+                final intId = int.tryParse(approvalRequestId);
+                if (intId != null) {
+                  await DatabaseHelper.instance.updateExpenseStatus(
+                    intId,
+                    newStatus,
+                    approvedBy: approvedBy,
+                    approvedAt: approvedAt,
+                  );
+                }
               }
-              AppLogger.log('MQTT Sync: Admin approval synced - $approvalType #$approvalRequestId -> $newStatus by $approvedBy');
+              AppLogger.log(
+                'MQTT Sync: Admin approval synced - $approvalType #$approvalRequestId -> $newStatus by $approvedBy',
+              );
               break;
 
             case 'employee_details':
@@ -712,10 +747,82 @@ class MqttHandler {
             case 'shift_update':
               final fromTime = payload['from_time'] ?? '09:00';
               final toTime = payload['to_time'] ?? '17:00';
+              final checkinBuffer = payload['checkin_buffer'] is int
+                  ? payload['checkin_buffer']
+                  : int.tryParse(payload['checkin_buffer']?.toString() ?? '') ??
+                        10;
+              final otBuffer = payload['ot_buffer'] is int
+                  ? payload['ot_buffer']
+                  : int.tryParse(payload['ot_buffer']?.toString() ?? '') ?? 25;
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString('shift_from_time', fromTime);
               await prefs.setString('shift_to_time', toTime);
-              AppLogger.log('MQTT Sync: Shift timings updated to $fromTime - $toTime');
+              await prefs.setInt('checkin_buffer', checkinBuffer);
+              await prefs.setInt('ot_buffer', otBuffer);
+              AppLogger.log(
+                'MQTT Sync: Shift timings updated to $fromTime - $toTime with buffers $checkinBuffer/$otBuffer',
+              );
+              break;
+
+            case 'expense_limits_update':
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                final fuel = payload['fuel'];
+                final food = payload['food'];
+                final material = payload['material'];
+                final travel = payload['travel'];
+
+                if (fuel is Map) {
+                  final fuelKm = (fuel['km_limit'] as num?)?.toDouble() ?? 0.0;
+                  final fuelAmt =
+                      (fuel['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                  await prefs.setDouble('fuel_km_limit', fuelKm);
+                  await prefs.setDouble('fuel_amt_limit', fuelAmt);
+                  AppLogger.log(
+                    'MQTT: Saved fuel limits - KM: $fuelKm, Amount: $fuelAmt',
+                  );
+                }
+                if (food is Map) {
+                  final foodType = (food['type'] as String?) ?? 'Standard';
+                  final foodAmt =
+                      (food['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                  await prefs.setString('food_type_limit', foodType);
+                  await prefs.setDouble('food_amt_limit', foodAmt);
+                  AppLogger.log(
+                    'MQTT: Saved food limits - Type: $foodType, Amount: $foodAmt',
+                  );
+                }
+                if (material is Map) {
+                  final materialType =
+                      (material['type'] as String?) ?? 'General';
+                  final materialAmt =
+                      (material['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                  await prefs.setString('material_type_limit', materialType);
+                  await prefs.setDouble('material_amt_limit', materialAmt);
+                  AppLogger.log(
+                    'MQTT: Saved material limits - Type: $materialType, Amount: $materialAmt',
+                  );
+                }
+                if (travel is Map) {
+                  final travelRapido =
+                      (travel['rapido'] as num?)?.toDouble() ?? 0.0;
+                  final travelBus = (travel['bus'] as num?)?.toDouble() ?? 0.0;
+                  final travelOwnVehicle =
+                      (travel['own_vehicle'] as num?)?.toDouble() ?? 0.0;
+                  await prefs.setDouble('travel_rapido_limit', travelRapido);
+                  await prefs.setDouble('travel_bus_limit', travelBus);
+                  await prefs.setDouble(
+                    'travel_own_vehicle_limit',
+                    travelOwnVehicle,
+                  );
+                  AppLogger.log(
+                    'MQTT: Saved travel limits - Rapido: $travelRapido, Bus: $travelBus, Own Vehicle: $travelOwnVehicle',
+                  );
+                }
+                AppLogger.log('MQTT Sync: Expense limits updated successfully');
+              } catch (e) {
+                AppLogger.log('MQTT ERROR: Failed to save expense limits - $e');
+              }
               break;
 
             default:

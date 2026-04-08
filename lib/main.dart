@@ -13,6 +13,7 @@ import './screens/admin_approvals_screen.dart';
 import './screens/approval_history_screen.dart';
 import './screens/admin_location_screen.dart';
 import './screens/admin_expenses_list_screen.dart';
+import './screens/admin_expense_limits_screen.dart';
 import './screens/employee_list_screen.dart';
 import './screens/employee_edit_screen.dart';
 import './screens/travel_attendance_screen.dart';
@@ -98,6 +99,8 @@ class MyApp extends StatelessWidget {
         AdminLocationScreen.id: (context) => const AdminLocationScreen(),
         AdminExpensesListScreen.id: (context) =>
             const AdminExpensesListScreen(),
+        AdminExpenseLimitsScreen.id: (context) =>
+            const AdminExpenseLimitsScreen(),
         EmployeeListScreen.id: (context) => const EmployeeListScreen(),
         EmployeeEditScreen.id: (context) => const EmployeeEditScreen(),
         TravelAttendanceScreen.id: (context) => const TravelAttendanceScreen(),
