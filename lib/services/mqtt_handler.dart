@@ -499,16 +499,28 @@ class MqttHandler {
     String period,
     double hours,
     double rate,
-    double total,
-  ) {
+    double total, {
+    double? baseSalary,
+    int? absentDays,
+    double? deduction,
+    double? adjustedFixedSalary,
+    double? expenses,
+    double? otEarnings,
+  }) {
     final payload = {
-      "type": "ot_payout",
+      "type": "salary_payout",
       "request_id": _uuid.v4(),
       "employee_id": empId,
-      "period": period, // e.g., "Weekly" or "Monthly"
+      "period": period,
+      "base_salary": baseSalary ?? 0.0,
+      "absent_days": absentDays ?? 0,
+      "deduction": deduction ?? 0.0,
+      "adjusted_fixed_salary": adjustedFixedSalary ?? 0.0,
       "ot_hours": hours,
       "hourly_rate": rate,
-      "total_amount": total,
+      "ot_earnings": otEarnings ?? 0.0,
+      "expenses": expenses ?? 0.0,
+      "total_monthly_payout": total,
       "timestamp": DateTime.now().toIso8601String(),
     };
     publish(topicOTPayout, jsonEncode(payload));

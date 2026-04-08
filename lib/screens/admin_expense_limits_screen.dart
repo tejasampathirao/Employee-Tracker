@@ -39,7 +39,7 @@ class _AdminExpenseLimitsScreenState extends State<AdminExpenseLimitsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLimits();
+    _loadSavedLimits();
   }
 
   @override
@@ -54,25 +54,25 @@ class _AdminExpenseLimitsScreenState extends State<AdminExpenseLimitsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadLimits() async {
+  Future<void> _loadSavedLimits() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _fuelKmLimitController.text =
-          prefs.getDouble('fuel_km_limit')?.toString() ?? '0.0';
-      _fuelAmtLimitController.text =
-          prefs.getDouble('fuel_amt_limit')?.toString() ?? '0.0';
+      _fuelKmLimitController.text = (prefs.getDouble('fuel_km_limit') ?? 0.0)
+          .toString();
+      _fuelAmtLimitController.text = (prefs.getDouble('fuel_amt_limit') ?? 0.0)
+          .toString();
       _foodType = prefs.getString('food_type_limit') ?? 'Standard';
-      _foodAmtLimitController.text =
-          prefs.getDouble('food_amt_limit')?.toString() ?? '0.0';
+      _foodAmtLimitController.text = (prefs.getDouble('food_amt_limit') ?? 0.0)
+          .toString();
       _materialType = prefs.getString('material_type_limit') ?? 'General';
       _materialAmtLimitController.text =
-          prefs.getDouble('material_amt_limit')?.toString() ?? '0.0';
+          (prefs.getDouble('material_amt_limit') ?? 0.0).toString();
       _travelRapidoLimitController.text =
-          prefs.getDouble('travel_rapido_limit')?.toString() ?? '0.0';
+          (prefs.getDouble('travel_rapido_limit') ?? 0.0).toString();
       _travelBusLimitController.text =
-          prefs.getDouble('travel_bus_limit')?.toString() ?? '0.0';
+          (prefs.getDouble('travel_bus_limit') ?? 0.0).toString();
       _travelOwnVehicleLimitController.text =
-          prefs.getDouble('travel_own_vehicle_limit')?.toString() ?? '0.0';
+          (prefs.getDouble('travel_own_vehicle_limit') ?? 0.0).toString();
     });
   }
 
@@ -108,6 +108,19 @@ class _AdminExpenseLimitsScreenState extends State<AdminExpenseLimitsScreen> {
       await prefs.setDouble('travel_bus_limit', travelBusLimit);
       await prefs.setDouble('travel_own_vehicle_limit', travelOwnVehicleLimit);
 
+      setState(() {
+        _fuelKmLimitController.text = fuelKmLimit.toString();
+        _fuelAmtLimitController.text = fuelAmtLimit.toString();
+        _foodType = _foodType;
+        _foodAmtLimitController.text = foodAmtLimit.toString();
+        _materialType = _materialType;
+        _materialAmtLimitController.text = materialAmtLimit.toString();
+        _travelRapidoLimitController.text = travelRapidoLimit.toString();
+        _travelBusLimitController.text = travelBusLimit.toString();
+        _travelOwnVehicleLimitController.text = travelOwnVehicleLimit
+            .toString();
+      });
+
       // Prepare payload for MQTT
       final limitsPayload = {
         'fuel': {'km_limit': fuelKmLimit, 'amt_limit': fuelAmtLimit},
@@ -127,9 +140,7 @@ class _AdminExpenseLimitsScreenState extends State<AdminExpenseLimitsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Expense limits updated and broadcasted successfully!',
-            ),
+            content: Text('Limits saved locally and broadcasted.'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
           ),

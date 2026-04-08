@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import '../services/mqtt_handler.dart';
 import '../screens/login_screen.dart';
 import 'attendance_card.dart';
+import '../services/background_geofence_service.dart';
 import 'attendance_history_view.dart';
 import '../database/db_helper.dart';
 import '../network/report_service.dart';
@@ -2402,8 +2403,45 @@ Widget profileView(
             title: const Text('Logout', style: TextStyle(color: Colors.red)),
             onTap: () async {
               final prefs = await SharedPreferences.getInstance();
+              final preservedKeys = [
+                'fuel_km_limit',
+                'fuel_amt_limit',
+                'food_type_limit',
+                'food_amt_limit',
+                'material_type_limit',
+                'material_amt_limit',
+                'travel_rapido_limit',
+                'travel_bus_limit',
+                'travel_own_vehicle_limit',
+              ];
+
+              final preservedValues = <String, Object?>{};
+              for (final key in preservedKeys) {
+                final value = prefs.get(key);
+                if (value != null) {
+                  preservedValues[key] = value;
+                }
+              }
+
               await prefs.clear();
+              for (final entry in preservedValues.entries) {
+                final key = entry.key;
+                final value = entry.value;
+                if (value is int) {
+                  await prefs.setInt(key, value);
+                } else if (value is double) {
+                  await prefs.setDouble(key, value);
+                } else if (value is bool) {
+                  await prefs.setBool(key, value);
+                } else if (value is String) {
+                  await prefs.setString(key, value);
+                } else if (value is List<String>) {
+                  await prefs.setStringList(key, value);
+                }
+              }
+
               mqttClient.disconnect();
+              BackgroundGeofenceService.stopMonitoring();
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
                   context,

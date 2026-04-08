@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 
 class OvertimeCalculatorCard extends StatefulWidget {
@@ -9,7 +10,6 @@ class OvertimeCalculatorCard extends StatefulWidget {
 }
 
 class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
-  double _hourlyRate = 0.0;
   Map<String, double> _otStats = {'today': 0.0, 'week': 0.0, 'month': 0.0};
   bool _isLoading = true;
 
@@ -21,7 +21,19 @@ class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
 
   Future<void> _loadOTStats() async {
     try {
-      final stats = await DatabaseHelper.instance.getOvertimeStats();
+      final prefs = await SharedPreferences.getInstance();
+      final empId = prefs.getString('employee_id')?.trim();
+      if (empId == null || empId.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _otStats = {'today': 0.0, 'week': 0.0, 'month': 0.0};
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      final stats = await DatabaseHelper.instance.getOvertimeStats(employeeId: empId);
       if (mounted) {
         setState(() {
           _otStats = stats;
@@ -53,38 +65,21 @@ class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Overtime (OT) Calculator',
+            'Overtime (OT) Summary',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
           ),
           const SizedBox(height: 12),
-          TextField(
-            keyboardType: TextInputType.number,
-            style: const TextStyle(fontSize: 14),
-            decoration: InputDecoration(
-              labelText: 'Enter Hourly OT Rate (₹)',
-              prefixText: '₹ ',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onChanged: (value) {
-              setState(() {
-                _hourlyRate = double.tryParse(value) ?? 0.0;
-              });
-            },
-          ),
-          const SizedBox(height: 16),
           if (_isLoading)
             const Center(child: CircularProgressIndicator())
           else
             Column(
               children: [
-                _buildOTRow('Today', _otStats['today']!),
-                const Divider(height: 20),
-                _buildOTRow('This Week', _otStats['week']!),
-                const Divider(height: 20),
-                _buildOTRow('This Month', _otStats['month']!),
+                _buildOTRow('Current Month OT', _otStats['month']!),
+                const SizedBox(height: 8),
+                Text(
+                  'Calculated using admin-defined shift end and OT buffer settings.',
+                  style: TextStyle(color: Colors.grey[700], fontSize: 12),
+                ),
               ],
             ),
         ],
@@ -97,11 +92,7 @@ class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-        Text('${hours.toStringAsFixed(1)} hrs', style: const TextStyle(color: Colors.blueGrey)),
-        Text(
-          '₹ ${(hours * _hourlyRate).toStringAsFixed(0)}',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16),
-        ),
+        Text('${hours.toStringAsFixed(1)} hrs', style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
       ],
     );
   }

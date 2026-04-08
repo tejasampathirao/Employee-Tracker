@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
   final TextEditingController _otBufferController = TextEditingController(
     text: '25',
   );
+  final TextEditingController _fixedSalaryController = TextEditingController(
+    text: '0',
+  );
 
   String _otPayoutPeriod = 'Weekly';
   double _otHourlyRate = 0;
@@ -41,6 +45,14 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
   int _otBufferMins = 25;
   String? _otEmployeeId;
   String? _otEmployeeName;
+  double _baseSalary = 0.0;
+  double _adjustedFixedSalary = 0.0;
+  int _presentDays = 0;
+  int _absentDays = 0;
+  double _deduction = 0.0;
+  double _totalExpenses = 0.0;
+  double _totalMonthlyPayout = 0.0;
+  Timer? _prefsSaveTimer;
 
   @override
   void initState() {
@@ -50,11 +62,23 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
 
   @override
   void dispose() {
+    _prefsSaveTimer?.cancel();
     _otRateController.dispose();
     _checkinBufferController.dispose();
     _checkoutBufferController.dispose();
     _otBufferController.dispose();
+    _fixedSalaryController.dispose();
     super.dispose();
+  }
+
+  void _schedulePayrollPrefsSave() {
+    _prefsSaveTimer?.cancel();
+    _prefsSaveTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (_otEmployeeId == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('ot_rate_${_otEmployeeId}', _otHourlyRate);
+      await prefs.setDouble('fixed_salary_${_otEmployeeId}', _baseSalary);
+    });
   }
 
   TimeOfDay _parseShiftTime(String timeStr) {
@@ -143,13 +167,37 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     });
 
     final stats = await DatabaseHelper.instance.getEmployeeOTStats(empId);
+    final baseSalaryFromDb = await DatabaseHelper.instance.getEmployeeSalary(empId);
+    final approvedExpenses = await DatabaseHelper.instance.getApprovedMonthlyExpenses(empId);
+    final prefs = await SharedPreferences.getInstance();
+    final savedRate = prefs.getDouble('ot_rate_$empId') ?? 0.0;
+    final savedBaseSalary = prefs.getDouble('fixed_salary_$empId') ?? 0.0;
+    final now = DateTime.now();
+    final presentDays = await DatabaseHelper.instance.getPresentDaysCount(empId, now.month, now.year);
+    final absentDays = 30 - presentDays;
+
     if (mounted) {
       setState(() {
         _otWeeklyMins = stats['weeklyOTMinutes'] ?? 0;
         _otMonthlyMins = stats['monthlyOTMinutes'] ?? 0;
+        _baseSalary = savedBaseSalary > 0 ? savedBaseSalary : baseSalaryFromDb;
+        _totalExpenses = approvedExpenses;
+        _presentDays = presentDays;
+        _absentDays = absentDays;
+        _otHourlyRate = savedRate;
+        _otRateController.text = savedRate.toString();
+        _fixedSalaryController.text = _baseSalary.toString();
+        _recalculateTotalPayout();
         _isOtLoading = false;
       });
     }
+  }
+
+  void _recalculateTotalPayout() {
+    final monthlyOTHours = _otMonthlyMins / 60.0;
+    _deduction = (_baseSalary / 30.0) * _absentDays;
+    _adjustedFixedSalary = _baseSalary - _deduction;
+    _totalMonthlyPayout = _adjustedFixedSalary + (monthlyOTHours * _otHourlyRate) + _totalExpenses;
   }
 
   String _formatMins(int totalMins) {
@@ -164,8 +212,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
   }
 
   void _publishOtPayout() {
-    final otHours = _getCalculatedHours();
-    final totalPayout = otHours * _otHourlyRate;
+    final otHours = _otMonthlyMins / 60.0;
+    final otEarnings = otHours * _otHourlyRate;
 
     if (_otEmployeeId == null || _otEmployeeName == null) {
       return;
@@ -176,13 +224,19 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       _otPayoutPeriod,
       otHours,
       _otHourlyRate,
-      totalPayout,
+      _totalMonthlyPayout,
+      baseSalary: _baseSalary,
+      absentDays: _absentDays,
+      deduction: _deduction,
+      adjustedFixedSalary: _adjustedFixedSalary,
+      expenses: _totalExpenses,
+      otEarnings: otEarnings,
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'OT Payout of ₹${totalPayout.toStringAsFixed(2)} published for $_otEmployeeName',
+          'Total Monthly Salary of ₹${_totalMonthlyPayout.toStringAsFixed(2)} published for $_otEmployeeName',
         ),
         backgroundColor: Colors.green,
       ),
@@ -938,10 +992,12 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                           prefixText: '₹ ',
                                         ),
                                         onChanged: (val) {
+                                          final rate = double.tryParse(val) ?? 0;
                                           setState(() {
-                                            _otHourlyRate =
-                                                double.tryParse(val) ?? 0;
+                                            _otHourlyRate = rate;
+                                            _recalculateTotalPayout();
                                           });
+                                          _schedulePayrollPrefsSave();
                                         },
                                       ),
                                     ),
@@ -977,6 +1033,44 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 16),
+                                // Fixed Salary Input
+                                TextField(
+                                  controller: _fixedSalaryController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Fixed Salary (Base ₹)',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    prefixText: '₹ ',
+                                  ),
+                                  onChanged: (val) {
+                                    final salary = double.tryParse(val) ?? 0;
+                                    setState(() {
+                                      _baseSalary = salary;
+                                      _deduction = (_baseSalary / 30.0) * _absentDays;
+                                      _adjustedFixedSalary = _baseSalary - _deduction;
+                                      _recalculateTotalPayout();
+                                    });
+                                    _schedulePayrollPrefsSave();
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Fixed Salary: ₹${_adjustedFixedSalary.toStringAsFixed(2)} (Absent Days: $_absentDays)',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Approved Expenses: ₹${_totalExpenses.toStringAsFixed(0)}',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'OT Earnings: ₹${((_otMonthlyMins / 60.0) * _otHourlyRate).toStringAsFixed(0)}',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 16),
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
@@ -1002,7 +1096,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '₹ ${(_getCalculatedHours() * _otHourlyRate).toStringAsFixed(2)}',
+                                            '₹ ${_totalMonthlyPayout.toStringAsFixed(2)}',
                                             style: const TextStyle(
                                               fontSize: 24,
                                               fontWeight: FontWeight.bold,
@@ -1026,11 +1120,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   width: double.infinity,
                                   height: 55,
                                   child: ElevatedButton(
-                                    onPressed:
-                                        _getCalculatedHours() * _otHourlyRate >
-                                            0
-                                        ? _publishOtPayout
-                                        : null,
+                                    onPressed: _totalMonthlyPayout > 0 ? _publishOtPayout : null,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.deepOrange,
                                       foregroundColor: Colors.white,
@@ -1044,6 +1134,37 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue[50],
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: Colors.blue[100]!),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Total Monthly Salary Slip',
+                                        style: TextStyle(
+                                          color: Colors.blue[800],
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '₹ ${_totalMonthlyPayout.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],

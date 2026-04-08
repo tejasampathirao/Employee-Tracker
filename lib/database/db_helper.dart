@@ -864,10 +864,13 @@ class DatabaseHelper {
     return {'today': todayTotal, 'week': weekTotal, 'month': monthTotal};
   }
 
-  Future<Map<String, double>> getOvertimeStats() async {
+  Future<Map<String, double>> getOvertimeStats({String? employeeId}) async {
     final db = await instance.database;
-    // We query all records to support real-time OT for active sessions
-    final all = await db.query('attendance');
+    final String whereClause = employeeId != null
+        ? 'employee_id = ? AND checkOutTime IS NOT NULL'
+        : 'checkOutTime IS NOT NULL';
+    final List<dynamic>? whereArgs = employeeId != null ? [employeeId] : null;
+    final all = await db.query('attendance', where: whereClause, whereArgs: whereArgs);
 
     double todayOT = 0;
     double weekOT = 0;
@@ -878,12 +881,17 @@ class DatabaseHelper {
     final weekAgo = now.subtract(const Duration(days: 7));
     final firstOfMonth = DateTime(now.year, now.month, 1);
 
+    final prefs = await SharedPreferences.getInstance();
+    final shiftEndStr = prefs.getString('shift_to_time') ?? '17:00';
+    final otBufferMins = prefs.getInt('ot_buffer') ?? 25;
+    final endParts = shiftEndStr.split(':');
+    final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
+    final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
+
     for (var row in all) {
       final checkIn = DateTime.parse(row['checkInTime'] as String);
       final checkOutStr = row['checkOutTime'] as String?;
 
-      // Step 1: Parse/Determine Check-Out Time
-      // For active sessions, we use DateTime.now() if it's today's log.
       DateTime? checkOut;
       if (checkOutStr != null) {
         checkOut = DateTime.parse(checkOutStr);
@@ -892,22 +900,17 @@ class DatabaseHelper {
       }
 
       if (checkOut != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final shiftEndStr = prefs.getString('shift_to_time') ?? '17:00';
-        final otBufferMins = prefs.getInt('ot_buffer') ?? 25;
-        final endParts = shiftEndStr.split(':');
         final shiftEnd = DateTime(
           checkIn.year,
           checkIn.month,
           checkIn.day,
-          int.parse(endParts[0]),
-          int.parse(endParts[1]),
+          shiftEndHour,
+          shiftEndMinute,
         );
 
         if (checkOut.isAfter(shiftEnd)) {
           final otStartTime = checkIn.isAfter(shiftEnd) ? checkIn : shiftEnd;
           final extraMinutes = checkOut.difference(otStartTime).inMinutes;
-
           if (extraMinutes >= otBufferMins) {
             final double sessionOT = (extraMinutes - otBufferMins) / 3600.0;
             final date = row['date'] as String;
@@ -1102,6 +1105,30 @@ class DatabaseHelper {
         : 0.0;
 
     return total;
+  }
+
+  Future<double> getCategorySpentThisMonth(
+    String category, {
+    String? employeeId,
+  }) async {
+    final db = await instance.database;
+    final now = DateTime.now();
+    final firstDayOfMonth = DateTime(now.year, now.month, 1)
+        .toIso8601String()
+        .split('T')[0];
+
+    final query = StringBuffer(
+      'SELECT SUM(amount) as total FROM employee_expenses WHERE expense_category = ? '
+      'AND date >= ? AND status IN ("Approved", "Pending")',
+    );
+    final args = <Object>[category, firstDayOfMonth];
+    if (employeeId != null && employeeId.isNotEmpty) {
+      query.write(' AND employee_id = ?');
+      args.add(employeeId);
+    }
+
+    final result = await db.rawQuery(query.toString(), args);
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   // --- Live Location Methods ---
@@ -1551,6 +1578,12 @@ class DatabaseHelper {
   Future<Map<String, dynamic>> getEmployeeOTStats(String employeeId) async {
     final db = await instance.database;
     final now = DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    final shiftEndStr = prefs.getString('shift_to_time') ?? '17:00';
+    final otBufferMins = prefs.getInt('ot_buffer') ?? 25;
+    final endParts = shiftEndStr.split(':');
+    final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
+    final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
 
     // 1. Current Week OT
     final weekStart = now.subtract(Duration(days: now.weekday - 1));
@@ -1574,23 +1607,24 @@ class DatabaseHelper {
       int totalMinutes = 0;
       for (var record in records) {
         final checkOutStr = record['checkOutTime'] as String?;
-        if (checkOutStr != null) {
+        final checkInStr = record['checkInTime'] as String?;
+        if (checkOutStr != null && checkInStr != null) {
           try {
+            final checkIn = DateTime.parse(checkInStr);
             final checkOut = DateTime.parse(checkOutStr);
-            // Shift ends at 5:00 PM (17:00)
             final shiftEnd = DateTime(
               checkOut.year,
               checkOut.month,
               checkOut.day,
-              17,
-              0,
+              shiftEndHour,
+              shiftEndMinute,
             );
 
             if (checkOut.isAfter(shiftEnd)) {
-              final extraMinutes = checkOut.difference(shiftEnd).inMinutes;
-              // Grace period: If extra < 25, OT = 0. Else count all.
-              if (extraMinutes >= 25) {
-                totalMinutes += extraMinutes;
+              final otStartTime = checkIn.isAfter(shiftEnd) ? checkIn : shiftEnd;
+              final extraMinutes = checkOut.difference(otStartTime).inMinutes;
+              if (extraMinutes >= otBufferMins) {
+                totalMinutes += extraMinutes - otBufferMins;
               }
             }
           } catch (e) {
@@ -1716,5 +1750,50 @@ class DatabaseHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('shift_from_time', fromTime);
     await prefs.setString('shift_to_time', toTime);
+  }
+
+  // --- New Methods for Total Monthly Salary Calculation ---
+  Future<double> getEmployeeSalary(String empId) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'users',
+      columns: ['salary'],
+      where: 'emp_id = ? OR employee_id = ?',
+      whereArgs: [empId, empId],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first['salary'] as double? ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  Future<int> getPresentDaysCount(String empId, int month, int year) async {
+    final db = await instance.database;
+    final monthPrefix = DateFormat('yyyy-MM').format(DateTime(year, month));
+
+    final result = await db.rawQuery('''
+      SELECT COUNT(DISTINCT date) as presentCount
+      FROM attendance
+      WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
+        AND date LIKE ?
+        AND (status = 'Present' OR checkInTime IS NOT NULL)
+    ''', [empId, empId, '$monthPrefix-%']);
+
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<double> getApprovedMonthlyExpenses(String empId) async {
+    // Use admin-defined monthly expense limits as the approved expenses amount.
+    // This is sourced from SharedPreferences set by the Admin Expense Limits screen.
+    final prefs = await SharedPreferences.getInstance();
+    final foodLimit = prefs.getDouble('food_amt_limit') ?? 0.0;
+    final materialLimit = prefs.getDouble('material_amt_limit') ?? 0.0;
+    final fuelLimit = prefs.getDouble('fuel_amt_limit') ?? 0.0;
+    final travelRapidoLimit = prefs.getDouble('travel_rapido_limit') ?? 0.0;
+    final travelBusLimit = prefs.getDouble('travel_bus_limit') ?? 0.0;
+    final travelOwnVehicleLimit = prefs.getDouble('travel_own_vehicle_limit') ?? 0.0;
+
+    return foodLimit + materialLimit + fuelLimit + travelRapidoLimit + travelBusLimit + travelOwnVehicleLimit;
   }
 }

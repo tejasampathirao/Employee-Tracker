@@ -35,7 +35,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _handleLogout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
+
+    final preservedKeys = [
+      'fuel_km_limit',
+      'fuel_amt_limit',
+      'food_type_limit',
+      'food_amt_limit',
+      'material_type_limit',
+      'material_amt_limit',
+      'travel_rapido_limit',
+      'travel_bus_limit',
+      'travel_own_vehicle_limit',
+    ];
+
+    final preservedValues = <String, Object?>{};
+    for (final key in preservedKeys) {
+      final value = prefs.get(key);
+      if (value != null) {
+        preservedValues[key] = value;
+      }
+    }
+
     await prefs.clear();
+
+    for (final entry in preservedValues.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (value is int) {
+        await prefs.setInt(key, value);
+      } else if (value is double) {
+        await prefs.setDouble(key, value);
+      } else if (value is bool) {
+        await prefs.setBool(key, value);
+      } else if (value is String) {
+        await prefs.setString(key, value);
+      } else if (value is List<String>) {
+        await prefs.setStringList(key, value);
+      }
+    }
 
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(

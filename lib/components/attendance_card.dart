@@ -42,6 +42,7 @@ class _AttendanceCardState extends State<AttendanceCard>
 
   // Geofencing and History logic
   StreamSubscription<Position>? _positionStream;
+  Timer? _exitDebounceTimer;
 
   @override
   void initState() {
@@ -86,10 +87,20 @@ class _AttendanceCardState extends State<AttendanceCard>
       );
     }
 
+    _exitDebounceTimer?.cancel();
+    _exitDebounceTimer = null;
+
     _positionStream =
         Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (Position position) {
             if (_isCheckedIn) {
+              if (position.accuracy > 50) {
+                AppLogger.log(
+                  "GPS Jump detected (Accuracy: ${position.accuracy}m). Ignoring exit.",
+                );
+                return;
+              }
+
               double distance = Geolocator.distanceBetween(
                 position.latitude,
                 position.longitude,
@@ -102,10 +113,23 @@ class _AttendanceCardState extends State<AttendanceCard>
               );
 
               if (distance > kGeofenceRadiusMeter) {
-                AppLogger.log(
-                  "GEOFENCE: Auto-checkout triggered (out of bounds)",
-                );
-                _performAutoCheckout();
+                if (_exitDebounceTimer == null || !_exitDebounceTimer!.isActive) {
+                  AppLogger.log(
+                    "GEOFENCE: Outside geofence, starting 2-minute verification timer",
+                  );
+                  _exitDebounceTimer = Timer(const Duration(minutes: 2), () {
+                    _exitDebounceTimer = null;
+                    _triggerExitNotification();
+                  });
+                }
+              } else {
+                if (_exitDebounceTimer?.isActive ?? false) {
+                  AppLogger.log(
+                    "GEOFENCE: Re-entered geofence before timeout, cancelling exit verification",
+                  );
+                  _exitDebounceTimer?.cancel();
+                  _exitDebounceTimer = null;
+                }
               }
             }
           },
@@ -113,7 +137,10 @@ class _AttendanceCardState extends State<AttendanceCard>
   }
 
   /// Background-safe auto-checkout — works even when the app is not in foreground
-  Future<void> _performAutoCheckout() async {
+  Future<void> _performAutoCheckout(String reason) async {
+    AppLogger.log(
+      "CHECKOUT ATTEMPT: Reason - $reason | Time - ${DateTime.now()}",
+    );
     if (_currentAttendanceId == null || _checkInTime == null) return;
 
     _positionStream?.cancel();
@@ -182,6 +209,25 @@ class _AttendanceCardState extends State<AttendanceCard>
 
     if (widget.onActionComplete != null) widget.onActionComplete!();
     AppLogger.log("AUTO-CHECKOUT: Completed with status: $finalStatus");
+  }
+
+  Future<void> _triggerExitNotification() async {
+    AppLogger.log('GEOFENCE: Triggering exit notification after debounce timer');
+    await flutterLocalNotificationsPlugin.show(
+      3,
+      'Location Update',
+      'You seem to have left the office. Would you like to Check Out?',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'exit_notification',
+          'Exit Notification',
+          channelDescription:
+              'Notification for geofence exit verification',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
   }
 
   void _setupMqtt() async {
@@ -496,8 +542,14 @@ class _AttendanceCardState extends State<AttendanceCard>
 
         // Minimum Duration for "Present" Status
         if (_currentAttendanceId != null && _checkInTime != null) {
+          const String reason = 'Manual checkout by employee';
+          AppLogger.log(
+            "CHECKOUT ATTEMPT: Reason - $reason | Time - ${DateTime.now()}",
+          );
           _positionStream
               ?.cancel(); // STOP monitoring immediately on manual checkout
+          _exitDebounceTimer?.cancel();
+          _exitDebounceTimer = null;
           BackgroundGeofenceService.stopMonitoring(); // Stop background service
 
           Duration worked = now.difference(_checkInTime!);
