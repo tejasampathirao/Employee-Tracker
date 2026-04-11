@@ -3,13 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import '../services/mqtt_handler.dart';
 import 'admin_attendance_screen.dart';
+import 'ot_calculator_employees_screen.dart';
 import 'employee_list_screen.dart';
 import 'admin_approvals_screen.dart';
 import 'approval_history_screen.dart';
 import 'admin_location_screen.dart';
-import 'admin_expenses_list_screen.dart';
 import 'admin_leave_management_screen.dart';
-import 'admin_ot_screen.dart';
 import 'admin_expense_limits_screen.dart';
 import 'login_screen.dart';
 import '../utils/excel_export_helper.dart';
@@ -49,10 +48,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ];
 
     final preservedValues = <String, Object?>{};
-    for (final key in preservedKeys) {
-      final value = prefs.get(key);
-      if (value != null) {
-        preservedValues[key] = value;
+    for (final key in prefs.getKeys()) {
+      if (preservedKeys.contains(key) ||
+          key.startsWith('ot_rate_') ||
+          key.startsWith('fixed_salary_')) {
+        preservedValues[key] = prefs.get(key);
       }
     }
 
@@ -106,38 +106,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: theme.colorScheme.primary.withValues(
-                    alpha: 0.1,
-                  ),
-                  child: Icon(
-                    Icons.admin_panel_settings,
-                    size: 35,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Welcome, Admin!',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Manage your workforce efficiently',
-                      style: TextStyle(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            _buildProfileHeader(),
             const SizedBox(height: 24),
             const Text(
               'Management Services',
@@ -158,6 +127,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   Icons.timer_outlined,
                   Colors.orange,
                   () => Navigator.pushNamed(context, AdminAttendanceScreen.id),
+                ),
+                _buildServiceCard(
+                  context,
+                  'OT Calculator',
+                  Icons.calculate,
+                  Colors.deepOrange,
+                  () =>
+                      Navigator.pushNamed(context, OTCalculatorEmployeesScreen.id),
                 ),
                 _buildServiceCard(
                   context,
@@ -206,6 +183,45 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       Navigator.pushNamed(context, AdminExpenseLimitsScreen.id),
                 ),
               ],
+            ),
+            const SizedBox(height: 32),
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  try {
+                    final path = await ExcelExportHelper.exportDataToExcel();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content:
+                              Text('Excel Report Generated! Saved at: $path'),
+                          duration: const Duration(seconds: 10),
+                          action: SnackBarAction(label: 'OK', onPressed: () {}),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to generate report: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.description_outlined),
+                label: const Text('Export Excel Report'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: const StadiumBorder(),
+                  elevation: 4,
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             Center(
@@ -280,35 +296,68 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          try {
-            final path = await ExcelExportHelper.exportDataToExcel();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Excel Report Generated! Saved at: $path'),
-                  duration: const Duration(seconds: 10),
-                  action: SnackBarAction(label: 'OK', onPressed: () {}),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: DatabaseHelper.instance.getUser(),
+      builder: (context, snapshot) {
+        final userData = snapshot.data;
+        final name = userData?['name'] ?? 'Admin';
+        final role = userData?['role'] ?? 'System Administrator';
+        final initial = name.isNotEmpty ? name[0].toUpperCase() : 'A';
+        final theme = Theme.of(context);
+
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.1,
+                  ),
+                  child: Text(
+                    initial,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 ),
-              );
-            }
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Failed to generate report: $e'),
-                  backgroundColor: Colors.red,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        role,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              );
-            }
-          }
-        },
-        label: const Text('Export Excel Report'),
-        icon: const Icon(Icons.description_outlined),
-        backgroundColor: Colors.green[700],
-        foregroundColor: Colors.white,
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

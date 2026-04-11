@@ -168,7 +168,7 @@ Future<void> _checkGeofenceAndAutoCheckout(ServiceInstance service) async {
         ? 'Present'
         : 'Auto-Checkout';
 
-    await DatabaseHelper.instance.checkOut(
+    await DatabaseHelper.instance.updateCheckOut(
       timeString,
       attendanceId,
       status: finalStatus,

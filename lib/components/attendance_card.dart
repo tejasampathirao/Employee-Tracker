@@ -29,6 +29,7 @@ class _AttendanceCardState extends State<AttendanceCard>
   DateTime? _checkInTime;
   Timer? _timer;
   Duration _duration = Duration.zero;
+  int _calculatedOT = 0;
   int? _currentAttendanceId;
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -148,13 +149,37 @@ class _AttendanceCardState extends State<AttendanceCard>
     final now = DateTime.now();
     final timeString = now.toIso8601String();
 
+    final prefs = await SharedPreferences.getInstance();
+    final shiftEndTimeStr = prefs.getString('shift_to_time') ?? '17:00';
+    final otBuffer = prefs.getInt('ot_buffer') ?? 30;
+
+    final endParts = shiftEndTimeStr.split(':');
+    final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
+    final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
+    final shiftEndTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      shiftEndHour,
+      shiftEndMinute,
+    );
+
+    int calculatedOT = 0;
+    if (now.isAfter(shiftEndTime)) {
+      final minutesPastShift = now.difference(shiftEndTime).inMinutes;
+      if (minutesPastShift >= otBuffer) {
+        calculatedOT = minutesPastShift;
+      }
+    }
+
     Duration worked = now.difference(_checkInTime!);
     String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
 
-    await DatabaseHelper.instance.checkOut(
+    await DatabaseHelper.instance.updateCheckOut(
       timeString,
       _currentAttendanceId!,
       status: finalStatus,
+      otMinutes: calculatedOT,
     );
 
     try {
@@ -164,7 +189,6 @@ class _AttendanceCardState extends State<AttendanceCard>
         ),
       );
 
-      final prefs = await SharedPreferences.getInstance();
       final empId = prefs.getString('employee_id') ?? 'Unknown';
 
       mqttService.publishAttendance(
@@ -173,6 +197,7 @@ class _AttendanceCardState extends State<AttendanceCard>
         lng: position.longitude,
         employeeId: empId,
         empstatus: 'checkout',
+        otMinutes: calculatedOT,
       );
     } catch (e) {
       AppLogger.log("AUTO-CHECKOUT: Failed to publish MQTT: $e");
@@ -556,10 +581,34 @@ class _AttendanceCardState extends State<AttendanceCard>
           // DATABASE LOGIC: Explicitly save strings
           String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
 
-          await DatabaseHelper.instance.checkOut(
+          final prefs = await SharedPreferences.getInstance();
+          final shiftEndTimeStr = prefs.getString('shift_to_time') ?? '17:00';
+          final otBuffer = prefs.getInt('ot_buffer') ?? 30;
+
+          final endParts = shiftEndTimeStr.split(':');
+          final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
+          final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
+          final shiftEndTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            shiftEndHour,
+            shiftEndMinute,
+          );
+
+          int calculatedOT = 0;
+          if (now.isAfter(shiftEndTime)) {
+            final minutesPastShift = now.difference(shiftEndTime).inMinutes;
+            if (minutesPastShift >= otBuffer) {
+              calculatedOT = minutesPastShift;
+            }
+          }
+
+          await DatabaseHelper.instance.updateCheckOut(
             timeString,
             _currentAttendanceId!,
             status: finalStatus,
+            otMinutes: calculatedOT,
           );
 
           // Get current position for MQTT
@@ -570,7 +619,6 @@ class _AttendanceCardState extends State<AttendanceCard>
           );
 
           // Publish to MQTT using standardized function
-          final prefs = await SharedPreferences.getInstance();
           final empId = prefs.getString('employee_id') ?? 'Unknown';
 
           mqttService.publishAttendance(
@@ -579,6 +627,7 @@ class _AttendanceCardState extends State<AttendanceCard>
             lng: position.longitude,
             employeeId: empId,
             empstatus: 'checkout',
+            otMinutes: calculatedOT,
           );
 
           // Requirement 3: Cancel shift end reminder on Check-Out
@@ -595,6 +644,7 @@ class _AttendanceCardState extends State<AttendanceCard>
             _checkInTime = null;
             _currentAttendanceId = null;
             _duration = Duration.zero;
+            _calculatedOT = calculatedOT;
           });
 
           if (widget.onActionComplete != null) widget.onActionComplete!();

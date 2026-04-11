@@ -97,6 +97,7 @@ class MqttHandler {
     required double lng,
     required String employeeId,
     String empstatus = 'checkin',
+    int otMinutes = 0,
   }) {
     final Map<String, dynamic> payload = {
       "type": "attendance",
@@ -106,6 +107,7 @@ class MqttHandler {
       "employee_id": employeeId,
       "timestamp": DateTime.now().toIso8601String(),
       "location": {"lat": lat, "lng": lng},
+      "ot_minutes": otMinutes,
     };
 
     final String jsonString = jsonEncode(payload);
@@ -476,51 +478,41 @@ class MqttHandler {
     publish(expenseMaterialTopic, jsonString);
   }
 
-  void publishHoliday(
-    DateTime startDate,
-    DateTime endDate,
-    String reason,
-    String adminId,
-  ) {
-    final payload = {
-      "type": "holiday_announcement",
-      "request_id": _uuid.v4(),
-      "start_date": startDate.toIso8601String(),
-      "end_date": endDate.toIso8601String(),
-      "reason": reason,
-      "admin_id": adminId,
-      "timestamp": DateTime.now().toIso8601String(),
-    };
-    publish(topicHolidays, jsonEncode(payload));
+  void publishHoliday(Map<String, dynamic> payload) {
+    publish(
+      topicHolidays,
+      jsonEncode({
+        "type": "holiday_announcement",
+        "request_id": _uuid.v4(),
+        "timestamp": DateTime.now().toIso8601String(),
+        ...payload,
+      }),
+    );
   }
 
   void publishOTPayout(
     String empId,
-    String period,
-    double hours,
-    double rate,
-    double total, {
-    double? baseSalary,
-    int? absentDays,
-    double? deduction,
-    double? adjustedFixedSalary,
-    double? expenses,
-    double? otEarnings,
-  }) {
+    String empName,
+    String month,
+    double baseSalary,
+    double adjustedFixedSalary,
+    int absentDays,
+    double actualExpenses,
+    double otEarnings,
+    double totalMonthlyPayout,
+  ) {
     final payload = {
       "type": "salary_payout",
       "request_id": _uuid.v4(),
-      "employee_id": empId,
-      "period": period,
-      "base_salary": baseSalary ?? 0.0,
-      "absent_days": absentDays ?? 0,
-      "deduction": deduction ?? 0.0,
-      "adjusted_fixed_salary": adjustedFixedSalary ?? 0.0,
-      "ot_hours": hours,
-      "hourly_rate": rate,
-      "ot_earnings": otEarnings ?? 0.0,
-      "expenses": expenses ?? 0.0,
-      "total_monthly_payout": total,
+      "emp_id": empId,
+      "emp_name": empName,
+      "month": month,
+      "base_fixed_salary": baseSalary,
+      "adjusted_fixed_salary": adjustedFixedSalary,
+      "absent_days": absentDays,
+      "actual_expenses": actualExpenses,
+      "ot_earnings": otEarnings,
+      "total_monthly_payout": totalMonthlyPayout,
       "timestamp": DateTime.now().toIso8601String(),
     };
     publish(topicOTPayout, jsonEncode(payload));
@@ -601,6 +593,21 @@ class MqttHandler {
           AppLogger.log('MQTT Master Router: Received $type from $topic');
 
           switch (type) {
+            case 'salary_payout':
+              AppLogger.log('MQTT Sync: Salary payout received.');
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                final String slipsKey = 'salary_slips';
+                List<String> slips = prefs.getStringList(slipsKey) ?? [];
+                slips.insert(0, content); // Add to top
+                if (slips.length > 50) slips.removeLast(); // Keep reasonable
+                await prefs.setStringList(slipsKey, slips);
+                AppLogger.log('MQTT Sync: Salary slip saved to SharedPreferences.');
+              } catch (e) {
+                AppLogger.log('MQTT ERROR: Failed to save salary slip - $e');
+              }
+              break;
+
             case 'status_update':
               await DatabaseHelper.instance.updateRequestStatus(
                 payload['category'] ?? '',

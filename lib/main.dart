@@ -9,6 +9,7 @@ import './screens/register_screen.dart';
 import './screens/live_data_monitor_screen.dart';
 import './screens/admin_dashboard.dart';
 import './screens/admin_attendance_screen.dart';
+import './screens/ot_calculator_employees_screen.dart';
 import './screens/admin_approvals_screen.dart';
 import './screens/approval_history_screen.dart';
 import './screens/admin_location_screen.dart';
@@ -94,6 +95,8 @@ class MyApp extends StatelessWidget {
         LiveDataMonitorScreen.id: (context) => const LiveDataMonitorScreen(),
         AdminDashboard.id: (context) => const AdminDashboard(),
         AdminAttendanceScreen.id: (context) => const AdminAttendanceScreen(),
+        OTCalculatorEmployeesScreen.id: (context) =>
+            const OTCalculatorEmployeesScreen(),
         AdminApprovalsScreen.id: (context) => const AdminApprovalsScreen(),
         ApprovalHistoryScreen.id: (context) => const ApprovalHistoryScreen(),
         AdminLocationScreen.id: (context) => const AdminLocationScreen(),

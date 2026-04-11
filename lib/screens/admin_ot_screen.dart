@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../database/db_helper.dart';
 import '../services/mqtt_handler.dart';
 
@@ -333,26 +335,51 @@ class _OTCalculatorSheetState extends State<OTCalculatorSheet> {
     );
   }
 
-  void _publishPayout() {
+  Future<void> _publishPayout() async {
     final otHours = _getCalculatedHours();
-    final totalPayout = otHours * _hourlyRate;
+    final otEarnings = otHours * _hourlyRate;
+    
+    // 1. Prepare the Dynamic Data Map from current state
+    final Map<String, dynamic> salarySlipPayload = {
+      "type": "salary_payout",
+      "emp_id": widget.empId,
+      "emp_name": widget.empName,
+      "month": DateFormat('MMMM yyyy').format(DateTime.now()),
+      "fixed_salary_base": 0.0, // Not tracked in this simple OT screen
+      "adjusted_fixed_salary": 0.0,
+      "approved_expenses": 0.0,
+      "ot_earnings": otEarnings,
+      "total_monthly_payout": otEarnings,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
 
-    MqttHandler().publishOTPayout(
-      widget.empId,
-      _payoutPeriod,
-      otHours,
-      _hourlyRate,
-      totalPayout,
-    );
-
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'OT Payout of ₹${totalPayout.toStringAsFixed(2)} published for ${widget.empName}',
-        ),
-        backgroundColor: Colors.green,
-      ),
-    );
+    // 2. Publish to MQTT in a try-catch block
+    try {
+      String jsonString = jsonEncode(salarySlipPayload);
+      MqttHandler().publish(
+        "admin/broadcast/ot_payout", 
+        jsonString
+      );
+      
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Salary Slip Published for ${widget.empName}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Publish Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error publishing payout'), 
+            backgroundColor: Colors.red
+          ),
+        );
+      }
+    }
   }
 }

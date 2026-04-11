@@ -222,7 +222,8 @@ class DatabaseHelper {
         latitude REAL,
         longitude REAL,
         type TEXT,
-        status TEXT
+        status TEXT,
+        ot_minutes INTEGER DEFAULT 0
       )
     ''');
 
@@ -674,18 +675,39 @@ class DatabaseHelper {
     });
   }
 
-  Future<int> checkOut(
+  Future<int> updateCheckOut(
     String checkOutTime,
     int id, {
     String status = 'Completed',
+    int otMinutes = 0,
   }) async {
     final db = await instance.database;
     return await db.update(
       'attendance',
-      {'checkOutTime': checkOutTime, 'status': status},
+      {
+        'checkOutTime': checkOutTime,
+        'status': status,
+        'ot_minutes': otMinutes,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<double> getMonthlyOT(String employeeId) async {
+    final db = await instance.database;
+    final String currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+    
+    final List<Map<String, dynamic>> result = await db.rawQuery(
+      'SELECT SUM(ot_minutes) as total_ot FROM attendance WHERE employee_id = ? AND date LIKE ?',
+      [employeeId, '$currentMonth%'],
+    );
+
+    if (result.isNotEmpty && result.first['total_ot'] != null) {
+      final int totalMinutes = result.first['total_ot'] as int;
+      return totalMinutes / 60.0;
+    }
+    return 0.0;
   }
 
   Future<Map<String, dynamic>?> getLastAttendance() async {
@@ -1781,6 +1803,67 @@ class DatabaseHelper {
     ''', [empId, empId, '$monthPrefix-%']);
 
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<double> getActualMonthlyExpenseTotal(String empId, String monthYear) async {
+    final db = await instance.database;
+    final result = await db.rawQuery('''
+      SELECT SUM(amount) as total 
+      FROM employee_expenses 
+      WHERE employee_id = ? AND date LIKE ?
+    ''', [empId, '$monthYear-%']);
+
+    if (result.isNotEmpty && result.first['total'] != null) {
+      return (result.first['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
+
+  Future<double> getActualMonthlySpending(String empId, String monthYear) async {
+    final db = await instance.database;
+    final result = await db.rawQuery('''
+      SELECT SUM(amount) as total 
+      FROM employee_expenses 
+      WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
+        AND date LIKE ?
+    ''', [empId, empId, '$monthYear-%']);
+
+    if (result.isNotEmpty && result.first['total'] != null) {
+      return (result.first['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
+
+  Future<double> getActualApprovedExpenses(
+    String empId,
+    int month,
+    int year,
+  ) async {
+    final db = await instance.database;
+    final monthPrefix = DateFormat('yyyy-MM').format(DateTime(year, month));
+
+    final result = await db.rawQuery('''
+      SELECT SUM(amount) as total 
+      FROM employee_expenses 
+      WHERE (employee_id = ? OR employee_id IN (SELECT name FROM users WHERE emp_id = ?))
+        AND status = 'Approved'
+        AND date LIKE ?
+    ''', [empId, empId, '$monthPrefix-%']);
+
+    if (result.isNotEmpty && result.first['total'] != null) {
+      return (result.first['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
+
+  int getSundaysPassed(DateTime upToDate) {
+    int count = 0;
+    for (int i = 1; i <= upToDate.day; i++) {
+      if (DateTime(upToDate.year, upToDate.month, i).weekday == DateTime.sunday) {
+        count++;
+      }
+    }
+    return count;
   }
 
   Future<double> getApprovedMonthlyExpenses(String empId) async {

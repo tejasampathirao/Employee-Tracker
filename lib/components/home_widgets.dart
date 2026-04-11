@@ -2416,10 +2416,11 @@ Widget profileView(
               ];
 
               final preservedValues = <String, Object?>{};
-              for (final key in preservedKeys) {
-                final value = prefs.get(key);
-                if (value != null) {
-                  preservedValues[key] = value;
+              for (final key in prefs.getKeys()) {
+                if (preservedKeys.contains(key) ||
+                    key.startsWith('ot_rate_') ||
+                    key.startsWith('fixed_salary_')) {
+                  preservedValues[key] = prefs.get(key);
                 }
               }
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/mqtt_handler.dart';
-import '../database/db_helper.dart';
 
 class AdminLeaveManagementScreen extends StatefulWidget {
   const AdminLeaveManagementScreen({super.key});
@@ -16,15 +15,19 @@ class AdminLeaveManagementScreen extends StatefulWidget {
 class _AdminLeaveManagementScreenState
     extends State<AdminLeaveManagementScreen> {
   final TextEditingController _reasonController = TextEditingController();
-  DateTimeRange? _selectedRange;
+  
+  // Step 1: State Variables
+  DateTime? _selectedDate;
+  final List<Map<String, dynamic>> _sessionHolidays = [];
   bool _isPublishing = false;
 
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
+  // Step 2: The Date Picker
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
       context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime(2100),
-      initialDateRange: _selectedRange,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -40,11 +43,12 @@ class _AdminLeaveManagementScreenState
     );
     if (picked != null) {
       setState(() {
-        _selectedRange = picked;
+        _selectedDate = picked;
       });
     }
   }
 
+  // Step 3: The Announce Logic
   Future<void> _announceHoliday() async {
     final reason = _reasonController.text.trim();
     if (reason.isEmpty) {
@@ -54,9 +58,9 @@ class _AdminLeaveManagementScreenState
       return;
     }
 
-    if (_selectedRange == null) {
+    if (_selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a date range')),
+        const SnackBar(content: Text('Please select a date')),
       );
       return;
     }
@@ -66,13 +70,25 @@ class _AdminLeaveManagementScreenState
     try {
       final prefs = await SharedPreferences.getInstance();
       final adminId = prefs.getString('employee_id') ?? 'Admin';
+      final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
 
-      MqttHandler().publishHoliday(
-        _selectedRange!.start,
-        _selectedRange!.end,
-        reason,
-        adminId,
-      );
+      // Create the MQTT payload
+      final payload = {
+        "holiday_name": reason,
+        "formatted_date": formattedDate,
+        "admin_id": adminId,
+      };
+
+      // Call mqttService.publishHoliday(payload)
+      MqttHandler().publishHoliday(payload);
+
+      // Add the new holiday to _sessionHolidays and call setState()
+      setState(() {
+        _sessionHolidays.add({
+          "name": reason,
+          "date": formattedDate,
+        });
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -83,7 +99,7 @@ class _AdminLeaveManagementScreenState
         );
         _reasonController.clear();
         setState(() {
-            _selectedRange = null;
+          _selectedDate = null;
         });
       }
     } catch (e) {
@@ -99,8 +115,6 @@ class _AdminLeaveManagementScreenState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -136,18 +150,18 @@ class _AdminLeaveManagementScreenState
               ),
               child: ListTile(
                 leading: const Icon(Icons.calendar_month, color: Colors.teal),
-                title: const Text('Selected Date Range'),
+                title: const Text('Selected Date'),
                 subtitle: Text(
-                  _selectedRange == null
-                      ? 'No range selected'
-                      : '${DateFormat('MMM d').format(_selectedRange!.start)} - ${DateFormat('MMM d, yyyy').format(_selectedRange!.end)}',
+                  _selectedDate == null
+                      ? 'No date selected'
+                      : DateFormat('MMM d, yyyy').format(_selectedDate!),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
                 ),
                 trailing: TextButton(
-                  onPressed: () => _selectDateRange(context),
+                  onPressed: () => _selectDate(context),
                   child: const Text('SELECT'),
                 ),
               ),
@@ -201,45 +215,30 @@ class _AdminLeaveManagementScreenState
             const Divider(),
             const SizedBox(height: 20),
             const Text(
-              'Upcoming Holidays (Local DB)',
+              'Announced Holidays (Live)',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            FutureBuilder<List<Map<String, dynamic>>>(
-              future: DatabaseHelper.instance.getUpcomingHolidays(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final holidays = snapshot.data ?? [];
-                if (holidays.isEmpty) {
-                  return const Text('No upcoming holidays found.');
-                }
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: holidays.length > 8 ? 8 : holidays.length,
-                  itemBuilder: (context, index) {
-                    final h = holidays[index];
-                    String dateDisplay = h['date'];
-                    if (h['start_date'] != null && h['end_date'] != null) {
-                        try {
-                            final start = DateTime.parse(h['start_date']);
-                            final end = DateTime.parse(h['end_date']);
-                            dateDisplay = '${DateFormat('MMM d').format(start)} - ${DateFormat('MMM d').format(end)}';
-                        } catch(_) {}
-                    }
-                    return ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.event_available, color: Colors.teal, size: 20),
-                      title: Text(h['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(dateDisplay),
-                    );
-                  },
-                );
-              },
-            ),
+            // Step 4: The Bottom List
+            if (_sessionHolidays.isEmpty)
+              const Text('No holidays announced in this session.')
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _sessionHolidays.length,
+                itemBuilder: (context, index) {
+                  final h = _sessionHolidays[index];
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.event_available,
+                        color: Colors.teal, size: 20),
+                    title: Text(h['name'],
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(h['date']),
+                  );
+                },
+              ),
           ],
         ),
       ),
