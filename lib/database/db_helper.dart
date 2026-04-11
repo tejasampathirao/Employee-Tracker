@@ -553,6 +553,17 @@ class DatabaseHelper {
     return combined;
   }
 
+  Future<int> insertLocationLog(Map<String, dynamic> data) async {
+    final db = await instance.database;
+    return await db.insert('live_locations', {
+      'employee_id': data['employee_id'] ?? 'Unknown',
+      'latitude': data['latitude'],
+      'longitude': data['longitude'],
+      'speed': data['speed'] ?? 0.0,
+      'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<int> insertLocationRecord(Map<String, dynamic> payload) async {
     final db = await instance.database;
     return await db.insert('live_locations', {

@@ -619,6 +619,16 @@ class MqttHandler {
               );
               break;
 
+            case 'travel_expense_log':
+              await DatabaseHelper.instance.insertLocationLog({
+                'employee_id': payload['emp_id'],
+                'latitude': payload['lat'],
+                'longitude': payload['lng'],
+                'timestamp': payload['timestamp'],
+              });
+              AppLogger.log('MQTT Sync: Travel location log saved.');
+              break;
+
             case 'leave_request':
               await DatabaseHelper.instance.insertLeaveRequest(payload);
               AppLogger.log('MQTT Sync: Leave request saved.');

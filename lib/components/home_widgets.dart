@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1113,6 +1114,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
     text: "35",
   );
   LatLng? selectedLatLng;
+  double? _currentLat, _currentLng;
   String visitType = 'Onsite';
 
   showModalBottomSheet(
@@ -1251,13 +1253,13 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                                     ),
                                   );
 
-                              LatLng onsiteLatLng = LatLng(
-                                pos.latitude,
-                                pos.longitude,
-                              );
-
                               setModalState(() {
-                                selectedLatLng = onsiteLatLng;
+                                _currentLat = pos.latitude;
+                                _currentLng = pos.longitude;
+                                selectedLatLng = LatLng(
+                                  _currentLat!,
+                                  _currentLng!,
+                                );
                               });
 
                               // Auto-calculate distance and amount immediately
@@ -1347,11 +1349,12 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                       onPressed: () async {
                         if (descController.text.isEmpty ||
                             amtController.text.isEmpty ||
-                            selectedLatLng == null) {
+                            _currentLat == null ||
+                            _currentLng == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'Please fill all fields and pick a destination',
+                                'Please fill all fields and capture onsite location',
                               ),
                             ),
                           );
@@ -1377,40 +1380,40 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           'visit_type': visitType,
                           'src_lat': srcLat,
                           'src_lng': srcLng,
-                          'dest_lat': selectedLatLng!.latitude,
-                          'dest_lng': selectedLatLng!.longitude,
+                          'dest_lat': _currentLat,
+                          'dest_lng': _currentLng,
                         };
 
                         await DatabaseHelper.instance.insertExpense(expense);
+
+                        // Fetch user info for MQTT payload
+                        final user = await DatabaseHelper.instance.getUser();
+                        final String employeeId = user?['emp_id'] ?? 'Unknown';
+
+                        // New Submission Logic for Admin's Location Logs
+                        final Map<String, dynamic> travelPayload = {
+                          "type": "travel_expense_log",
+                          "emp_id": employeeId,
+                          "lat": _currentLat,
+                          "lng": _currentLng,
+                          "amount": amount,
+                          "timestamp": DateTime.now().toIso8601String()
+                        };
+
+                        mqttClient.publish(
+                          "admin/logs/travel",
+                          jsonEncode(travelPayload),
+                        );
 
                         // Calculate Road Distance (Km) between Office and Destination using 1.42 factor
                         double straightLineMeters = Geolocator.distanceBetween(
                           srcLat,
                           srcLng,
-                          selectedLatLng!.latitude,
-                          selectedLatLng!.longitude,
+                          _currentLat!,
+                          _currentLng!,
                         );
                         double roadDistanceKm =
                             (straightLineMeters * 1.42) / 1000;
-
-                        // Fetch user info for MQTT payload
-                        final user = await DatabaseHelper.instance.getUser();
-                        final String employeeId = user?['name'] ?? 'Unknown';
-
-                        // Publish via MQTT with route info (Office as source)
-                        mqttClient.publishTravelExpense(
-                          amount: amount,
-                          description: "$visitType: ${descController.text}",
-                          visitType: visitType,
-                          srcLat: srcLat,
-                          srcLng: srcLng,
-                          destLat: selectedLatLng!.latitude,
-                          destLng: selectedLatLng!.longitude,
-                          distanceKm: double.parse(
-                            roadDistanceKm.toStringAsFixed(2),
-                          ),
-                          employeeId: employeeId,
-                        );
 
                         // NEW: Export to Excel
                         final excelPath = await ExcelExportHelper.appendToExcel(
@@ -1442,7 +1445,7 @@ void _showTravelExpenseService(BuildContext context, MqttHandler mqttClient) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                'Travel Expense Logged & Saved to Excel!\nPath: $excelPath',
+                                'Travel Expense Logged & Sent to Admin!\nPath: $excelPath',
                               ),
                               duration: const Duration(seconds: 5),
                               action: SnackBarAction(

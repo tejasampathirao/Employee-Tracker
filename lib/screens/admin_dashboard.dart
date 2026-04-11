@@ -225,57 +225,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(height: 20),
             Center(
-              child: TextButton.icon(
-                onPressed: () async {
-                  bool confirm =
-                      await showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Wipe Data?'),
-                          content: const Text(
-                            'This will delete all attendance records from the database.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text(
-                                'WIPE',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ) ??
-                      false;
-
-                  if (confirm) {
-                    await DatabaseHelper.instance.clearAttendanceTable();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Attendance table cleared!'),
-                        ),
-                      );
-                    }
-                  }
-                },
-                icon: const Icon(
-                  Icons.delete_sweep,
-                  color: Colors.red,
-                  size: 20,
-                ),
-                label: const Text(
-                  'Wipe Attendance Data (Temporary)',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Center(
               child: OutlinedButton.icon(
                 onPressed: () => _handleLogout(context),
                 icon: const Icon(Icons.logout),
