@@ -24,7 +24,6 @@ import 'overtime_calculator_card.dart';
 import '../constants.dart';
 import '../utils/app_logger.dart';
 import '../screens/debug_logs_screen.dart';
-import '../screens/travel_attendance_screen.dart';
 import '../screens/employee_expense_submission_screen.dart';
 
 Widget getDrawerWidget(
@@ -435,12 +434,6 @@ Widget servicesView(
       'icon': Icons.directions_car,
       'color': Colors.teal,
       'desc': 'Onsite and Office logs',
-    },
-    {
-      'title': 'Travel Attendance',
-      'icon': Icons.transfer_within_a_station,
-      'color': Colors.deepOrange,
-      'desc': '10km geofenced attendance',
     },
     {
       'title': 'Daily Expenses',
@@ -2164,9 +2157,6 @@ Widget _buildServiceCard(
           break;
         case 'Travel Expenses':
           _showTravelExpenseService(context, mqttClient);
-          break;
-        case 'Travel Attendance':
-          Navigator.pushNamed(context, TravelAttendanceScreen.id);
           break;
         case 'Daily Expenses':
           Navigator.pushNamed(context, EmployeeExpenseSubmissionScreen.id);

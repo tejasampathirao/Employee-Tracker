@@ -17,7 +17,6 @@ import './screens/admin_expenses_list_screen.dart';
 import './screens/admin_expense_limits_screen.dart';
 import './screens/employee_list_screen.dart';
 import './screens/employee_edit_screen.dart';
-import './screens/travel_attendance_screen.dart';
 import './screens/additional_expenses_screen.dart';
 import './screens/employee_expense_submission_screen.dart';
 import './screens/admin_leave_management_screen.dart';
@@ -106,7 +105,6 @@ class MyApp extends StatelessWidget {
             const AdminExpenseLimitsScreen(),
         EmployeeListScreen.id: (context) => const EmployeeListScreen(),
         EmployeeEditScreen.id: (context) => const EmployeeEditScreen(),
-        TravelAttendanceScreen.id: (context) => const TravelAttendanceScreen(),
         AdditionalExpensesScreen.id: (context) =>
             const AdditionalExpensesScreen(),
         EmployeeExpenseSubmissionScreen.id: (context) =>

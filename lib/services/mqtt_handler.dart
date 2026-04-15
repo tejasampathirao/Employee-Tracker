@@ -25,6 +25,7 @@ class MqttHandler {
   final String locationTopic = 'employee/tracker/location';
   final String expensesTopic = 'employee/tracker/expenses';
   final String travelAttendanceTopic = 'employee/tracker/travel_attendance';
+  final String geofenceTopic = 'employee/tracker/attendance/geofence';
 
   // Admin Service Topics
   final String adminAttendanceTopic = 'admin/attendance';
@@ -113,6 +114,49 @@ class MqttHandler {
     final String jsonString = jsonEncode(payload);
     AppLogger.log('MQTT DEBUG [Attendance]: Sending Payload: $jsonString');
     publish(attendanceTopic, jsonString);
+  }
+
+  /// Function 2.1: Publishes geofence attendance events
+  void publishGeofenceAttendance({
+    required String status,
+    required double lat,
+    required double lng,
+    required String employeeId,
+    required String locationMode, // "Office" or "Site"
+    required String geofenceStatus, // "Inside" or "Exited"
+    Map<String, double>? activeSiteCoords,
+    String empstatus = 'checkin',
+    int otMinutes = 0,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "geofence_attendance",
+      "request_id": _uuid.v4(),
+      "status": status,
+      "empstatus": empstatus,
+      "employee_id": employeeId,
+      "timestamp": DateTime.now().toIso8601String(),
+      "location": {"lat": lat, "lng": lng},
+      "location_mode": locationMode,
+      "geofence_status": geofenceStatus,
+      "active_site_coords": activeSiteCoords,
+      "ot_minutes": otMinutes,
+    };
+
+    final String jsonString = jsonEncode(payload);
+    AppLogger.log('MQTT DEBUG [Geofence]: Sending Payload: $jsonString');
+    publish(geofenceTopic, jsonString);
+
+    // Admin Sync: Also publish to admin topic for live_locations table
+    final Map<String, dynamic> adminPayload = {
+      "type": "admin_location_sync",
+      "employee_id": employeeId,
+      "lat": lat,
+      "lng": lng,
+      "status": status,
+      "location_mode": locationMode,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+    publish(adminAttendanceTopic, jsonEncode(adminPayload));
   }
 
   /// Function 3: Publishes live location updates

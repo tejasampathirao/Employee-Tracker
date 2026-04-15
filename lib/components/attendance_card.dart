@@ -14,6 +14,8 @@ import 'package:timezone/data/latest.dart' as tz;
 import '../utils/app_logger.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/background_geofence_service.dart';
+import '../services/overtime_calculator_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class AttendanceCard extends StatefulWidget {
   final VoidCallback? onActionComplete;
@@ -29,7 +31,6 @@ class _AttendanceCardState extends State<AttendanceCard>
   DateTime? _checkInTime;
   Timer? _timer;
   Duration _duration = Duration.zero;
-  int _calculatedOT = 0;
   int? _currentAttendanceId;
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -44,6 +45,14 @@ class _AttendanceCardState extends State<AttendanceCard>
   // Geofencing and History logic
   StreamSubscription<Position>? _positionStream;
   Timer? _exitDebounceTimer;
+
+  // Dual Zone Geofencing
+  bool _isSiteMode = false;
+  LatLng? _activeSiteLocation;
+  int _consecutiveExitPulses = 0;
+  static const double kOfficeRadius = 100.0;
+  static const double kSiteTriggerDistance = 6000.0; // 6 km
+  static const double kSiteRadius = 100.0;
 
   @override
   void initState() {
@@ -67,17 +76,14 @@ class _AttendanceCardState extends State<AttendanceCard>
   void _startGeofenceMonitoring() {
     _positionStream?.cancel();
 
-    // Use AndroidSettings with foreground notification so geofence
-    // monitoring continues even when the app is in background/closed
     late LocationSettings locationSettings;
     if (defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 10,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationText:
-              "Employee Tracker is monitoring your office location",
-          notificationTitle: "Office Check-in Active",
+          notificationText: "Monitoring your attendance location",
+          notificationTitle: "Attendance Active",
           enableWakeLock: true,
         ),
       );
@@ -90,58 +96,94 @@ class _AttendanceCardState extends State<AttendanceCard>
 
     _exitDebounceTimer?.cancel();
     _exitDebounceTimer = null;
+    _consecutiveExitPulses = 0;
 
-    _positionStream =
-        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (Position position) {
-            if (_isCheckedIn) {
-              if (position.accuracy > 50) {
-                AppLogger.log(
-                  "GPS Jump detected (Accuracy: ${position.accuracy}m). Ignoring exit.",
-                );
-                return;
-              }
+    _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) async {
+        if (!_isCheckedIn) return;
 
-              double distance = Geolocator.distanceBetween(
-                position.latitude,
-                position.longitude,
-                kOfficeLatitude,
-                kOfficeLongitude,
-              );
+        if (position.accuracy > 50) {
+          AppLogger.log("GPS Jump detected (Accuracy: ${position.accuracy}m). Ignoring pulse.");
+          return;
+        }
 
-              AppLogger.log(
-                "GEOFENCE: Distance to office: ${distance.toStringAsFixed(0)}m",
-              );
+        double distance;
+        double radius;
+        String mode;
 
-              if (distance > kGeofenceRadiusMeter) {
-                if (_exitDebounceTimer == null || !_exitDebounceTimer!.isActive) {
-                  AppLogger.log(
-                    "GEOFENCE: Outside geofence, starting 2-minute verification timer",
-                  );
-                  _exitDebounceTimer = Timer(const Duration(minutes: 2), () {
-                    _exitDebounceTimer = null;
-                    _triggerExitNotification();
-                  });
-                }
-              } else {
-                if (_exitDebounceTimer?.isActive ?? false) {
-                  AppLogger.log(
-                    "GEOFENCE: Re-entered geofence before timeout, cancelling exit verification",
-                  );
-                  _exitDebounceTimer?.cancel();
-                  _exitDebounceTimer = null;
-                }
-              }
-            }
-          },
+        // 1. Determine Mode & Radius
+        double distanceToOffice = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          kOfficeLatitude,
+          kOfficeLongitude,
         );
+
+        if (_isSiteMode && _activeSiteLocation != null) {
+          distance = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            _activeSiteLocation!.latitude,
+            _activeSiteLocation!.longitude,
+          );
+          radius = kSiteRadius;
+          mode = "Site";
+        } else {
+          distance = distanceToOffice;
+          radius = kOfficeRadius;
+          mode = "Office";
+
+          // Trigger Site Mode if > 6km from office
+          if (distanceToOffice > kSiteTriggerDistance && !_isSiteMode) {
+            AppLogger.log("GEOFENCE: Distance > 6km. Switching to Site Mode.");
+            setState(() {
+              _isSiteMode = true;
+            });
+          }
+        }
+
+        AppLogger.log("GEOFENCE: Mode: $mode | Distance: ${distance.toStringAsFixed(0)}m | Radius: ${radius}m");
+
+        // 2. Handle Geofence Logic with Stability Check (3 Pulses)
+        if (distance > radius) {
+          _consecutiveExitPulses++;
+          AppLogger.log("GEOFENCE: Outside radius. Pulse count: $_consecutiveExitPulses/3");
+
+          if (_consecutiveExitPulses >= 3) {
+            AppLogger.log("GEOFENCE: Stability check failed. Triggering Auto-Checkout.");
+            await _performAutoCheckout("Left $mode area (Stability Check)");
+          } else {
+            // MQTT Heartbeat: Outside but not yet stable checkout
+            _publishGeofenceHeartbeat(position, mode, "Exited", radius);
+          }
+        } else {
+          _consecutiveExitPulses = 0; // Reset on return
+          _publishGeofenceHeartbeat(position, mode, "Inside", radius);
+        }
+      },
+    );
+  }
+
+  void _publishGeofenceHeartbeat(Position pos, String mode, String status, double radius) async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('employee_id') ?? 'Unknown';
+
+    mqttService.publishGeofenceAttendance(
+      status: "Heartbeat",
+      lat: pos.latitude,
+      lng: pos.longitude,
+      employeeId: empId,
+      locationMode: mode,
+      geofenceStatus: status,
+      activeSiteCoords: _activeSiteLocation != null
+          ? {"lat": _activeSiteLocation!.latitude, "lng": _activeSiteLocation!.longitude}
+          : null,
+    );
   }
 
   /// Background-safe auto-checkout — works even when the app is not in foreground
   Future<void> _performAutoCheckout(String reason) async {
-    AppLogger.log(
-      "CHECKOUT ATTEMPT: Reason - $reason | Time - ${DateTime.now()}",
-    );
+    AppLogger.log("AUTO-CHECKOUT: Triggered. Reason: $reason");
     if (_currentAttendanceId == null || _checkInTime == null) return;
 
     _positionStream?.cancel();
@@ -149,32 +191,20 @@ class _AttendanceCardState extends State<AttendanceCard>
     final now = DateTime.now();
     final timeString = now.toIso8601String();
 
-    final prefs = await SharedPreferences.getInstance();
-    final shiftEndTimeStr = prefs.getString('shift_to_time') ?? '17:00';
-    final otBuffer = prefs.getInt('ot_buffer') ?? 30;
-
-    final endParts = shiftEndTimeStr.split(':');
-    final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
-    final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
-    final shiftEndTime = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      shiftEndHour,
-      shiftEndMinute,
+    // 1. Calculate Overtime using Service (Simultaneous Running)
+    final allRecords = await DatabaseHelper.instance.getAllAttendance();
+    final otResult = await OvertimeCalculatorService().calculateDailyOT(
+      _checkInTime!.toIso8601String(),
+      timeString,
+      allRecords,
     );
 
-    int calculatedOT = 0;
-    if (now.isAfter(shiftEndTime)) {
-      final minutesPastShift = now.difference(shiftEndTime).inMinutes;
-      if (minutesPastShift >= otBuffer) {
-        calculatedOT = minutesPastShift;
-      }
-    }
+    int calculatedOT = otResult.dailyOTMinutes + otResult.doubleTimeMinutes;
 
     Duration worked = now.difference(_checkInTime!);
     String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
 
+    // 2. Save and Stop OT
     await DatabaseHelper.instance.updateCheckOut(
       timeString,
       _currentAttendanceId!,
@@ -184,18 +214,23 @@ class _AttendanceCardState extends State<AttendanceCard>
 
     try {
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
+      final prefs = await SharedPreferences.getInstance();
       final empId = prefs.getString('employee_id') ?? 'Unknown';
 
-      mqttService.publishAttendance(
+      // 3. MQTT Payload with Geofence Details
+      mqttService.publishGeofenceAttendance(
         status: finalStatus,
         lat: position.latitude,
         lng: position.longitude,
         employeeId: empId,
+        locationMode: _isSiteMode ? "Site" : "Office",
+        geofenceStatus: "Exited",
+        activeSiteCoords: _activeSiteLocation != null
+            ? {"lat": _activeSiteLocation!.latitude, "lng": _activeSiteLocation!.longitude}
+            : null,
         empstatus: 'checkout',
         otMinutes: calculatedOT,
       );
@@ -204,14 +239,19 @@ class _AttendanceCardState extends State<AttendanceCard>
     }
 
     _cancelShiftEndReminder();
-    BackgroundGeofenceService.stopMonitoring(); // Cancel background service
+    BackgroundGeofenceService.stopMonitoring();
     _timer?.cancel();
 
-    // Show notification so employee knows they were auto-checked-out
+    // Reset Site Mode state
+    _isSiteMode = false;
+    _activeSiteLocation = null;
+    _consecutiveExitPulses = 0;
+
+    // Show notification
     await flutterLocalNotificationsPlugin.show(
       2,
-      'Auto Checkout',
-      'You left the office area. Status: $finalStatus',
+      'Auto Checkout 📍',
+      'You left the $reason radius. Status: $finalStatus',
       const NotificationDetails(
         android: AndroidNotificationDetails(
           'auto_checkout',
@@ -229,11 +269,13 @@ class _AttendanceCardState extends State<AttendanceCard>
         _checkInTime = null;
         _currentAttendanceId = null;
         _duration = Duration.zero;
+        _isSiteMode = false;
+        _activeSiteLocation = null;
       });
     }
 
     if (widget.onActionComplete != null) widget.onActionComplete!();
-    AppLogger.log("AUTO-CHECKOUT: Completed with status: $finalStatus");
+    AppLogger.log("AUTO-CHECKOUT: Completed. Status: $finalStatus, OT: $calculatedOT mins");
   }
 
   Future<void> _triggerExitNotification() async {
@@ -449,43 +491,49 @@ class _AttendanceCardState extends State<AttendanceCard>
 
     try {
       if (!_isCheckedIn) {
-        // Requirement 1: Strict Location Validation
+        // Requirement 1: Dynamic Mode Selection & Validation
         Position position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         );
 
-        double distance = Geolocator.distanceBetween(
+        double distanceToOffice = Geolocator.distanceBetween(
           position.latitude,
           position.longitude,
           kOfficeLatitude,
           kOfficeLongitude,
         );
 
-        AppLogger.log(
-          "CHECK-IN: Distance to office: ${distance.toStringAsFixed(0)}m",
-        );
+        String currentMode = "Office";
+        if (distanceToOffice > kSiteTriggerDistance) {
+          currentMode = "Site";
+        }
 
-        // STRICT GEOFENCE ENFORCEMENT
-        if (distance > kGeofenceRadiusMeter) {
+        AppLogger.log("CHECK-IN: Mode detected: $currentMode | Distance to office: ${distanceToOffice.toStringAsFixed(0)}m");
+
+        // GEOFENCE ENFORCEMENT
+        if (currentMode == "Office" && distanceToOffice > kOfficeRadius) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  'Check-in failed: You are not at the office location. (Distance: ${distance.toStringAsFixed(0)}m)',
-                ),
+                content: Text('Check-in failed: You are not at the office (Distance: ${distanceToOffice.toStringAsFixed(0)}m)'),
                 backgroundColor: Colors.red,
                 behavior: SnackBarBehavior.floating,
               ),
             );
           }
-          return; // STOP execution here: No timer, No MQTT
+          return;
         }
 
-        // Proceed with check-in only if within 100m
+        // Proceed with check-in
         final prefs = await SharedPreferences.getInstance();
         final empId = prefs.getString('employee_id') ?? 'Unknown';
+
+        // If Site Mode, save the active site location
+        if (currentMode == "Site") {
+          _activeSiteLocation = LatLng(position.latitude, position.longitude);
+          _isSiteMode = true;
+          AppLogger.log("CHECK-IN: Active site coordinates saved: $_activeSiteLocation");
+        }
 
         final id = await DatabaseHelper.instance.checkIn(
           timeString,
@@ -493,18 +541,23 @@ class _AttendanceCardState extends State<AttendanceCard>
           position.latitude,
           position.longitude,
           empId,
-          type: 'Office',
+          type: currentMode,
         );
 
-        // Publish to MQTT using standardized function
-        mqttService.publishAttendance(
+        // Publish to MQTT with Geofence details
+        mqttService.publishGeofenceAttendance(
           status: "Checked In",
           lat: position.latitude,
           lng: position.longitude,
           employeeId: empId,
+          locationMode: currentMode,
+          geofenceStatus: "Inside",
+          activeSiteCoords: _activeSiteLocation != null
+              ? {"lat": _activeSiteLocation!.latitude, "lng": _activeSiteLocation!.longitude}
+              : null,
         );
 
-        // Publish to Admin Attendance topic
+        // Publish to Admin Attendance topic for live sync
         mqttService.publishAdminAttendance(
           employeeId: empId,
           checkInTime: timeString,
@@ -514,8 +567,8 @@ class _AttendanceCardState extends State<AttendanceCard>
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Checked in at Office.'),
+            SnackBar(
+              content: Text('Checked in at $currentMode.'),
               backgroundColor: Colors.green,
             ),
           );
@@ -618,14 +671,19 @@ class _AttendanceCardState extends State<AttendanceCard>
             ),
           );
 
-          // Publish to MQTT using standardized function
           final empId = prefs.getString('employee_id') ?? 'Unknown';
 
-          mqttService.publishAttendance(
+          // Publish to MQTT with Geofence details
+          mqttService.publishGeofenceAttendance(
             status: finalStatus,
             lat: position.latitude,
             lng: position.longitude,
             employeeId: empId,
+            locationMode: _isSiteMode ? "Site" : "Office",
+            geofenceStatus: "Exited",
+            activeSiteCoords: _activeSiteLocation != null
+                ? {"lat": _activeSiteLocation!.latitude, "lng": _activeSiteLocation!.longitude}
+                : null,
             empstatus: 'checkout',
             otMinutes: calculatedOT,
           );
@@ -644,7 +702,6 @@ class _AttendanceCardState extends State<AttendanceCard>
             _checkInTime = null;
             _currentAttendanceId = null;
             _duration = Duration.zero;
-            _calculatedOT = calculatedOT;
           });
 
           if (widget.onActionComplete != null) widget.onActionComplete!();
