@@ -74,8 +74,8 @@ class _AdminLeaveManagementScreenState
 
       // Create the MQTT payload
       final payload = {
-        "holiday_name": reason,
-        "formatted_date": formattedDate,
+        "name": reason,
+        "date": formattedDate,
         "admin_id": adminId,
       };
 

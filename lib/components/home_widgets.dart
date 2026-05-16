@@ -912,46 +912,54 @@ void _showAttendanceService(
                         ],
 
                         // Holiday list for this month
-                        Builder(
-                          builder: (context) {
-                            final monthHolidays = holidays.where((h) {
-                              return (h['date'] as String).startsWith(
-                                currentMonthStr,
-                              );
-                            }).toList();
-                            if (monthHolidays.isEmpty) return const SizedBox();
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Holidays This Month',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ...monthHolidays.map((h) {
-                                  final d = DateTime.parse(h['date'] as String);
-                                  return ListTile(
-                                    dense: true,
-                                    leading: const Icon(
-                                      Icons.celebration,
-                                      color: Colors.deepOrange,
-                                      size: 20,
-                                    ),
-                                    title: Text(h['name'] as String),
-                                    trailing: Text(
-                                      DateFormat('dd MMM, EEEE').format(d),
+                        StreamBuilder<void>(
+                          stream: AppLogger.holidayUpdateStream.stream,
+                          builder: (context, _) {
+                            return FutureBuilder<List<Map<String, dynamic>>>(
+                              future: DatabaseHelper.instance.getAllHolidays(),
+                              builder: (context, snapshot) {
+                                final currentHolidays = snapshot.data ?? holidays;
+                                final monthHolidays = currentHolidays.where((h) {
+                                  return (h['date'] as String).startsWith(
+                                    currentMonthStr,
+                                  );
+                                }).toList();
+
+                                if (monthHolidays.isEmpty) return const SizedBox();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'Holidays This Month',
                                       style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  );
-                                }),
-                              ],
+                                    const SizedBox(height: 8),
+                                    ...monthHolidays.map((h) {
+                                      final d = DateTime.parse(h['date'] as String);
+                                      return ListTile(
+                                        dense: true,
+                                        leading: const Icon(
+                                          Icons.celebration,
+                                          color: Colors.deepOrange,
+                                          size: 20,
+                                        ),
+                                        title: Text(h['name'] as String),
+                                        trailing: Text(
+                                          DateFormat('dd MMM, EEEE').format(d),
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                );
+                              },
                             );
                           },
                         ),

@@ -84,6 +84,10 @@ class LocationService {
           _checkGeofence(position);
         }
       },
+      onError: (e) {
+        debugPrint("Location Service Stream Error: $e");
+        stopTracking();
+      },
     );
   }
 

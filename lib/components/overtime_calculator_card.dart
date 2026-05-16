@@ -36,7 +36,7 @@ class _OvertimeCalculatorCardState extends State<OvertimeCalculatorCard> {
       final monthlyOT = await DatabaseHelper.instance.getMonthlyOT(empId);
       if (mounted) {
         setState(() {
-          _otStats = {'today': 0.0, 'week': 0.0, 'month': monthlyOT};
+          _otStats = {'today': 0.0, 'week': 0.0, 'month': monthlyOT / 60.0};
           _isLoading = false;
         });
       }

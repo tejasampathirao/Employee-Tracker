@@ -105,8 +105,8 @@ void _onStart(ServiceInstance service) async {
     });
   }
 
-  // Poll every 5 seconds
-  Timer.periodic(const Duration(seconds: 5), (timer) async {
+  // Poll every 30 seconds (reduced from 5s to save battery and prevent crashes)
+  Timer.periodic(const Duration(seconds: 30), (timer) async {
     final prefs = await SharedPreferences.getInstance();
     final isCheckedIn = prefs.getBool('bg_checked_in') ?? false;
 
@@ -127,9 +127,9 @@ Future<void> _checkGeofenceAndAutoCheckout(ServiceInstance service) async {
     final attendanceId = prefs.getInt('bg_attendance_id');
     if (attendanceId == null) return;
 
+    // Check if already checked out in DB
     final lastAttendance = await DatabaseHelper.instance.getLastAttendance();
     if (lastAttendance == null || lastAttendance['checkOutTime'] != null) {
-      // Already checked out — stop service
       await prefs.setBool('bg_checked_in', false);
       service.invoke('auto_checkout_done');
       if (service is AndroidServiceInstance) service.stopSelf();
@@ -146,10 +146,10 @@ Future<void> _checkGeofenceAndAutoCheckout(ServiceInstance service) async {
       return;
     }
 
-    // Get current position
+    // Get current position with timeout to prevent hanging
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
+    ).timeout(const Duration(seconds: 15));
 
     final distance = Geolocator.distanceBetween(
       position.latitude,
@@ -197,8 +197,9 @@ Future<void> _checkGeofenceAndAutoCheckout(ServiceInstance service) async {
 
     // Stop the foreground service
     if (service is AndroidServiceInstance) service.stopSelf();
-  } catch (_) {
-    // Best-effort — will retry on next 30-second tick
+  } catch (e) {
+    debugPrint("BG SERVICE ERROR: $e");
+    // Best-effort — will retry on next tick
   }
 }
 
@@ -211,7 +212,8 @@ Future<void> _publishAutoCheckoutMqtt({
 }) async {
   try {
     final clientId = 'bg_checkout_${Random().nextInt(100000)}';
-    final client = MqttServerClient.withPort('192.168.0.193', clientId, 1883);
+    // FIXED: Use correct broker IP
+    final client = MqttServerClient.withPort('13.203.2.58', clientId, 1883);
     client.connectTimeoutPeriod = 5000;
     client.keepAlivePeriod = 10;
     client.logging(on: false);

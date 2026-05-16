@@ -597,17 +597,21 @@ class MqttHandler {
   final Map<String, String> topicMessages = {};
   StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>? _subscription;
 
+  bool _isConnecting = false;
   Future<bool> connect() async {
     if (client.connectionStatus?.state == MqttConnectionState.connected) {
       return true;
     }
+    if (_isConnecting) return false;
 
+    _isConnecting = true;
     try {
       AppLogger.log('MQTT: Connecting to $broker:$port...');
       await client.connect().timeout(const Duration(seconds: 5));
-      // Removed redundant _setupMessageListener() call here as it's triggered in _onConnected()
+      _isConnecting = false;
       return true;
     } catch (e) {
+      _isConnecting = false;
       AppLogger.log('MQTT: Connection failed - $e');
       return false;
     }
@@ -615,301 +619,329 @@ class MqttHandler {
 
   void _setupMessageListener() {
     _subscription?.cancel();
-    _subscription = client.updates?.listen((
-      List<MqttReceivedMessage<MqttMessage>>? messages,
-    ) async {
-      if (messages == null || messages.isEmpty) return;
+    _subscription = client.updates?.listen(
+      (List<MqttReceivedMessage<MqttMessage>>? messages) async {
+        if (messages == null || messages.isEmpty) return;
 
-      for (final message in messages) {
-        final recMess = message.payload as MqttPublishMessage;
-        final content = MqttPublishPayload.bytesToStringAsString(
-          recMess.payload.message,
-        );
-        final topic = message.topic;
-
-        topicMessages[topic] = content;
-
-        try {
-          final payload = jsonDecode(content);
-          final String type = payload['type'] ?? '';
-          final String requestId = payload['request_id'] ?? '';
-
-          AppLogger.log('MQTT Master Router: Received $type from $topic');
-
-          switch (type) {
-            case 'salary_payout':
-              AppLogger.log('MQTT Sync: Salary payout received.');
-              try {
-                final prefs = await SharedPreferences.getInstance();
-                final String slipsKey = 'salary_slips';
-                List<String> slips = prefs.getStringList(slipsKey) ?? [];
-                slips.insert(0, content); // Add to top
-                if (slips.length > 50) slips.removeLast(); // Keep reasonable
-                await prefs.setStringList(slipsKey, slips);
-                AppLogger.log('MQTT Sync: Salary slip saved to SharedPreferences.');
-              } catch (e) {
-                AppLogger.log('MQTT ERROR: Failed to save salary slip - $e');
-              }
-              break;
-
-            case 'status_update':
-              await DatabaseHelper.instance.updateRequestStatus(
-                payload['category'] ?? '',
-                payload['id']?.toString() ?? '',
-                payload['status'] ?? 'Pending',
-              );
-              AppLogger.log(
-                'MQTT Sync: Status update saved for ${payload['category']} ${payload['id']}',
-              );
-              break;
-
-            case 'travel_expense_log':
-              await DatabaseHelper.instance.insertLocationLog({
-                'employee_id': payload['emp_id'],
-                'latitude': payload['lat'],
-                'longitude': payload['lng'],
-                'timestamp': payload['timestamp'],
-              });
-              AppLogger.log('MQTT Sync: Travel location log saved.');
-              break;
-
-            case 'leave_request':
-              await DatabaseHelper.instance.insertLeaveRequest(payload);
-              AppLogger.log('MQTT Sync: Leave request saved.');
-              break;
-
-            case 'attendance':
-              await DatabaseHelper.instance.insertAttendance(payload);
-              AppLogger.log('MQTT Sync: Office attendance saved.');
-              break;
-
-            case 'travel_attendance':
-              await DatabaseHelper.instance.insertTravelAttendance(payload);
-              AppLogger.log('MQTT Sync: Travel attendance saved.');
-              break;
-
-            case 'expense_report':
-            case 'expense_request':
-              // Handle combined report/request by splitting it into individual records for DatabaseHelper
-              final categories = ['food', 'fuel', 'travel', 'material'];
-              for (var cat in categories) {
-                if (payload['${cat}_amount'] != null &&
-                    (payload['${cat}_amount'] as num) > 0) {
-                  await DatabaseHelper.instance.insertExpenseRecord({
-                    'request_id': requestId.isNotEmpty
-                        ? '${requestId}_$cat'
-                        : null,
-                    'type': cat[0].toUpperCase() + cat.substring(1),
-                    'employee_id': payload['employee_id'],
-                    'amount': payload['${cat}_amount'],
-                    'description': payload['${cat}_desc'] ?? '',
-                    'timestamp': payload['timestamp'],
-                    'latitude': payload['latitude'] ?? payload['lat'],
-                    'longitude': payload['longitude'] ?? payload['lng'],
-                    'distance': payload['distance'] ?? payload['distance_km'],
-                  });
-                }
-              }
-              AppLogger.log('MQTT Sync: Combined $type split and saved.');
-              break;
-
-            case 'expense_claim':
-            case 'additional_expense':
-              await DatabaseHelper.instance.insertExpenseRecord(payload);
-              AppLogger.log('MQTT Sync: $type saved.');
-              break;
-
-            case 'travel_expense':
-              // Extract nested coordinates so the SQLite DB can read them
-              if (payload['route_info'] != null) {
-                payload['latitude'] =
-                    payload['latitude'] ??
-                    payload['route_info']['source']?['lat'];
-                payload['longitude'] =
-                    payload['longitude'] ??
-                    payload['route_info']['source']?['lng'];
-                payload['distance'] =
-                    payload['distance'] ?? payload['route_info']['distance_km'];
-              }
-              AppLogger.log(
-                'MQTT DEBUG: Attempting to insert travel expense...',
-              );
-              try {
-                await DatabaseHelper.instance.insertExpenseRecord(payload);
-              } catch (dbError) {
-                AppLogger.log(
-                  'MQTT ERROR: Database rejected expense: $dbError',
-                );
-              }
-              break;
-
-            case 'location_update':
-            case 'live_location':
-              await DatabaseHelper.instance.insertLocationRecord(payload);
-              AppLogger.log('MQTT Sync: Location update saved.');
-              break;
-
-            case 'admin_approval':
-              final approvalType = payload['approval_type'] ?? '';
-              final approvalRequestId = payload['request_id'] ?? '';
-              final newStatus = payload['status'] ?? '';
-              final approvedBy = payload['approved_by'] ?? 'Admin';
-              final approvedAt =
-                  payload['timestamp'] ?? DateTime.now().toIso8601String();
-              if (approvalType == 'leave' && approvalRequestId.isNotEmpty) {
-                final intId = int.tryParse(approvalRequestId);
-                if (intId != null) {
-                  await DatabaseHelper.instance.updateLeaveRequestStatus(
-                    intId,
-                    newStatus,
-                    approvedBy: approvedBy,
-                    approvedAt: approvedAt,
-                  );
-                }
-              } else if (approvalType == 'expense' &&
-                  approvalRequestId.isNotEmpty) {
-                final intId = int.tryParse(approvalRequestId);
-                if (intId != null) {
-                  await DatabaseHelper.instance.updateExpenseStatus(
-                    intId,
-                    newStatus,
-                    approvedBy: approvedBy,
-                    approvedAt: approvedAt,
-                  );
-                }
-              }
-              AppLogger.log(
-                'MQTT Sync: Admin approval synced - $approvalType #$approvalRequestId -> $newStatus by $approvedBy',
-              );
-              break;
-
-            case 'employee_details':
-              // Employee details update from admin — no local DB action needed
-              AppLogger.log(
-                'MQTT Sync: Employee details update received for ${payload['emp_id']}',
-              );
-              break;
-
-            case 'food_expense':
-            case 'fuel_expense':
-            case 'travel_category_expense':
-            case 'material_expense':
-              // Individual category expenses are already handled by the combined
-              // expense_request handler above, so skip to prevent duplicates
-              AppLogger.log(
-                'MQTT Sync: Skipping individual $type (handled by combined request).',
-              );
-              break;
-
-            case 'holiday_announcement':
-              AppLogger.log('MQTT DEBUG: Received new company holiday...');
-              try {
-                await DatabaseHelper.instance.insertHoliday(payload);
-              } catch (e) {
-                AppLogger.log('MQTT ERROR: Failed to save holiday - $e');
-              }
-              break;
-
-            case 'ot_payout':
-              AppLogger.log(
-                'MQTT DEBUG: Received OT Payout notification: ${payload['total_amount']}',
-              );
-              // In a real employee app, we might save this to a payouts table
-              break;
-
-            case 'shift_update':
-              final fromTime = payload['from_time'] ?? '09:00';
-              final toTime = payload['to_time'] ?? '17:00';
-              final checkinBuffer = payload['checkin_buffer'] is int
-                  ? payload['checkin_buffer']
-                  : int.tryParse(payload['checkin_buffer']?.toString() ?? '') ??
-                        10;
-              final otBuffer = payload['ot_buffer'] is int
-                  ? payload['ot_buffer']
-                  : int.tryParse(payload['ot_buffer']?.toString() ?? '') ?? 25;
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('shift_from_time', fromTime);
-              await prefs.setString('shift_to_time', toTime);
-              await prefs.setInt('checkin_buffer', checkinBuffer);
-              await prefs.setInt('ot_buffer', otBuffer);
-              AppLogger.log(
-                'MQTT Sync: Shift timings updated to $fromTime - $toTime with buffers $checkinBuffer/$otBuffer',
-              );
-              break;
-
-            case 'expense_limits_update':
-              try {
-                final prefs = await SharedPreferences.getInstance();
-                final fuel = payload['fuel'];
-                final food = payload['food'];
-                final material = payload['material'];
-                final travel = payload['travel'];
-
-                if (fuel is Map) {
-                  final fuelKm = (fuel['km_limit'] as num?)?.toDouble() ?? 0.0;
-                  final fuelAmt =
-                      (fuel['amt_limit'] as num?)?.toDouble() ?? 0.0;
-                  await prefs.setDouble('fuel_km_limit', fuelKm);
-                  await prefs.setDouble('fuel_amt_limit', fuelAmt);
-                  AppLogger.log(
-                    'MQTT: Saved fuel limits - KM: $fuelKm, Amount: $fuelAmt',
-                  );
-                }
-                if (food is Map) {
-                  final foodType = (food['type'] as String?) ?? 'Standard';
-                  final foodAmt =
-                      (food['amt_limit'] as num?)?.toDouble() ?? 0.0;
-                  await prefs.setString('food_type_limit', foodType);
-                  await prefs.setDouble('food_amt_limit', foodAmt);
-                  AppLogger.log(
-                    'MQTT: Saved food limits - Type: $foodType, Amount: $foodAmt',
-                  );
-                }
-                if (material is Map) {
-                  final materialType =
-                      (material['type'] as String?) ?? 'General';
-                  final materialAmt =
-                      (material['amt_limit'] as num?)?.toDouble() ?? 0.0;
-                  await prefs.setString('material_type_limit', materialType);
-                  await prefs.setDouble('material_amt_limit', materialAmt);
-                  AppLogger.log(
-                    'MQTT: Saved material limits - Type: $materialType, Amount: $materialAmt',
-                  );
-                }
-                if (travel is Map) {
-                  final travelRapido =
-                      (travel['rapido'] as num?)?.toDouble() ?? 0.0;
-                  final travelBus = (travel['bus'] as num?)?.toDouble() ?? 0.0;
-                  final travelOwnVehicle =
-                      (travel['own_vehicle'] as num?)?.toDouble() ?? 0.0;
-                  await prefs.setDouble('travel_rapido_limit', travelRapido);
-                  await prefs.setDouble('travel_bus_limit', travelBus);
-                  await prefs.setDouble(
-                    'travel_own_vehicle_limit',
-                    travelOwnVehicle,
-                  );
-                  AppLogger.log(
-                    'MQTT: Saved travel limits - Rapido: $travelRapido, Bus: $travelBus, Own Vehicle: $travelOwnVehicle',
-                  );
-                }
-                AppLogger.log('MQTT Sync: Expense limits updated successfully');
-              } catch (e) {
-                AppLogger.log('MQTT ERROR: Failed to save expense limits - $e');
-              }
-              break;
-
-            default:
-              AppLogger.log(
-                'MQTT Router: Unknown payload type received: $type',
-              );
-          }
-        } catch (e) {
-          AppLogger.log(
-            'MQTT Router Error: Failed to parse or save payload: $e',
+        for (final message in messages) {
+          final recMess = message.payload as MqttPublishMessage;
+          final content = MqttPublishPayload.bytesToStringAsString(
+            recMess.payload.message,
           );
+          final topic = message.topic;
+
+          topicMessages[topic] = content;
+
+          try {
+            final payload = jsonDecode(content);
+            final String type = payload['type'] ?? '';
+            final String requestId = payload['request_id'] ?? '';
+
+            AppLogger.log('MQTT Master Router: Received $type from $topic');
+
+            switch (type) {
+              case 'salary_payout':
+                AppLogger.log('MQTT Sync: Salary payout received.');
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final String slipsKey = 'salary_slips';
+                  List<String> slips = prefs.getStringList(slipsKey) ?? [];
+                  slips.insert(0, content); // Add to top
+                  if (slips.length > 50) slips.removeLast(); // Keep reasonable
+                  await prefs.setStringList(slipsKey, slips);
+                  AppLogger.log('MQTT Sync: Salary slip saved to SharedPreferences.');
+                } catch (e) {
+                  AppLogger.log('MQTT ERROR: Failed to save salary slip - $e');
+                }
+                break;
+
+              case 'status_update':
+                await DatabaseHelper.instance.updateRequestStatus(
+                  payload['category'] ?? '',
+                  payload['id']?.toString() ?? '',
+                  payload['status'] ?? 'Pending',
+                );
+                AppLogger.log(
+                  'MQTT Sync: Status update saved for ${payload['category']} ${payload['id']}',
+                );
+                break;
+
+              case 'travel_expense_log':
+                await DatabaseHelper.instance.insertLocationLog({
+                  'employee_id': payload['emp_id'],
+                  'latitude': payload['lat'],
+                  'longitude': payload['lng'],
+                  'timestamp': payload['timestamp'],
+                });
+                AppLogger.log('MQTT Sync: Travel location log saved.');
+                break;
+
+              case 'leave_request':
+                await DatabaseHelper.instance.insertLeaveRequest(payload);
+                AppLogger.log('MQTT Sync: Leave request saved.');
+                break;
+
+              case 'attendance':
+              case 'geofence_attendance':
+                final otMinutes = payload['ot_minutes'] ?? 0;
+                await DatabaseHelper.instance.insertAttendance(payload);
+                AppLogger.log(
+                  'MQTT Sync: $type saved for ${payload['employee_id']} (OT: $otMinutes min).',
+                );
+                break;
+
+              case 'travel_attendance':
+                await DatabaseHelper.instance.insertTravelAttendance(payload);
+                AppLogger.log('MQTT Sync: Travel attendance saved.');
+                break;
+
+              case 'expense_report':
+              case 'expense_request':
+                // Handle combined report/request by splitting it into individual records for DatabaseHelper
+                final categories = ['food', 'fuel', 'travel', 'material'];
+                for (var cat in categories) {
+                  if (payload['${cat}_amount'] != null &&
+                      (payload['${cat}_amount'] as num) > 0) {
+                    await DatabaseHelper.instance.insertExpenseRecord({
+                      'request_id': requestId.isNotEmpty
+                          ? '${requestId}_$cat'
+                          : null,
+                      'type': cat[0].toUpperCase() + cat.substring(1),
+                      'employee_id': payload['employee_id'],
+                      'amount': payload['${cat}_amount'],
+                      'description': payload['${cat}_desc'] ?? '',
+                      'timestamp': payload['timestamp'],
+                      'latitude': payload['latitude'] ?? payload['lat'],
+                      'longitude': payload['longitude'] ?? payload['lng'],
+                      'distance': payload['distance'] ?? payload['distance_km'],
+                    });
+                  }
+                }
+                AppLogger.log('MQTT Sync: Combined $type split and saved.');
+                break;
+
+              case 'expense_claim':
+              case 'additional_expense':
+                await DatabaseHelper.instance.insertExpenseRecord(payload);
+                AppLogger.log('MQTT Sync: $type saved.');
+                break;
+
+              case 'travel_expense':
+                // Extract nested coordinates so the SQLite DB can read them
+                if (payload['route_info'] != null) {
+                  payload['latitude'] =
+                      payload['latitude'] ??
+                      payload['route_info']['source']?['lat'];
+                  payload['longitude'] =
+                      payload['longitude'] ??
+                      payload['route_info']['source']?['lng'];
+                  payload['distance'] =
+                      payload['distance'] ?? payload['route_info']['distance_km'];
+                }
+                AppLogger.log(
+                  'MQTT DEBUG: Attempting to insert travel expense...',
+                );
+                try {
+                  await DatabaseHelper.instance.insertExpenseRecord(payload);
+                } catch (dbError) {
+                  AppLogger.log(
+                    'MQTT ERROR: Database rejected expense: $dbError',
+                  );
+                }
+                break;
+
+              case 'location_update':
+              case 'live_location':
+                await DatabaseHelper.instance.insertLocationRecord(payload);
+                AppLogger.log('MQTT Sync: Location update saved.');
+                break;
+
+              case 'admin_approval':
+                final approvalType = payload['approval_type'] ?? '';
+                final approvalRequestId = payload['request_id'] ?? '';
+                final newStatus = payload['status'] ?? '';
+                final approvedBy = payload['approved_by'] ?? 'Admin';
+                final approvedAt =
+                    payload['timestamp'] ?? DateTime.now().toIso8601String();
+                if (approvalType == 'leave' && approvalRequestId.isNotEmpty) {
+                  final intId = int.tryParse(approvalRequestId);
+                  if (intId != null) {
+                    await DatabaseHelper.instance.updateLeaveRequestStatus(
+                      intId,
+                      newStatus,
+                      approvedBy: approvedBy,
+                      approvedAt: approvedAt,
+                    );
+                  }
+                } else if (approvalType == 'expense' &&
+                    approvalRequestId.isNotEmpty) {
+                  final intId = int.tryParse(approvalRequestId);
+                  if (intId != null) {
+                    await DatabaseHelper.instance.updateExpenseStatus(
+                      intId,
+                      newStatus,
+                      approvedBy: approvedBy,
+                      approvedAt: approvedAt,
+                    );
+                  }
+                }
+                AppLogger.log(
+                  'MQTT Sync: Admin approval synced - $approvalType #$approvalRequestId -> $newStatus by $approvedBy',
+                );
+                break;
+
+              case 'employee_details':
+                // Employee details update from admin — no local DB action needed
+                AppLogger.log(
+                  'MQTT Sync: Employee details update received for ${payload['emp_id']}',
+                );
+                break;
+
+              case 'food_expense':
+              case 'fuel_expense':
+              case 'travel_category_expense':
+              case 'material_expense':
+                // Individual category expenses are already handled by the combined
+                // expense_request handler above, so skip to prevent duplicates
+                AppLogger.log(
+                  'MQTT Sync: Skipping individual $type (handled by combined request).',
+                );
+                break;
+
+              case 'holiday_announcement':
+                AppLogger.log('MQTT DEBUG: Received new company holiday...');
+                try {
+                  final holidayName = payload['name']?.toString() ?? 'New Holiday';
+                  final holidayDate =
+                      payload['date']?.toString() ?? DateTime.now().toIso8601String();
+
+                  await DatabaseHelper.instance.insertHoliday({
+                    'name': holidayName,
+                    'date': holidayDate,
+                  });
+                  AppLogger.triggerHolidayRefresh();
+                } catch (e) {
+                  AppLogger.log('MQTT ERROR: Failed to save holiday - $e');
+                }
+                break;
+
+              case 'holiday_update':
+                AppLogger.log('MQTT DEBUG: Received bulk holiday sync...');
+                try {
+                  if (payload['holidays_list'] != null) {
+                    await DatabaseHelper.instance.syncHolidays(payload['holidays_list']);
+                    AppLogger.triggerHolidayRefresh();
+                  }
+                } catch (e) {
+                  AppLogger.log('MQTT ERROR: Failed to sync holidays - $e');
+                }
+                break;
+
+              case 'ot_payout':
+                AppLogger.log(
+                  'MQTT DEBUG: Received OT Payout notification: ${payload['total_amount']}',
+                );
+                // In a real employee app, we might save this to a payouts table
+                break;
+
+              case 'shift_update':
+                final fromTime = payload['from_time'] ?? '09:00';
+                final toTime = payload['to_time'] ?? '17:00';
+                final checkinBuffer = payload['checkin_buffer'] is int
+                    ? payload['checkin_buffer']
+                    : int.tryParse(payload['checkin_buffer']?.toString() ?? '') ??
+                          10;
+                final otBuffer = payload['ot_buffer'] is int
+                    ? payload['ot_buffer']
+                    : int.tryParse(payload['ot_buffer']?.toString() ?? '') ?? 25;
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('shift_from_time', fromTime);
+                await prefs.setString('shift_to_time', toTime);
+                await prefs.setInt('checkin_buffer', checkinBuffer);
+                await prefs.setInt('ot_buffer', otBuffer);
+                AppLogger.log(
+                  'MQTT Sync: Shift timings updated to $fromTime - $toTime with buffers $checkinBuffer/$otBuffer',
+                );
+                break;
+
+              case 'expense_limits_update':
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final fuel = payload['fuel'];
+                  final food = payload['food'];
+                  final material = payload['material'];
+                  final travel = payload['travel'];
+
+                  if (fuel is Map) {
+                    final fuelKm = (fuel['km_limit'] as num?)?.toDouble() ?? 0.0;
+                    final fuelAmt =
+                        (fuel['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                    await prefs.setDouble('fuel_km_limit', fuelKm);
+                    await prefs.setDouble('fuel_amt_limit', fuelAmt);
+                    AppLogger.log(
+                      'MQTT: Saved fuel limits - KM: $fuelKm, Amount: $fuelAmt',
+                    );
+                  }
+                  if (food is Map) {
+                    final foodType = (food['type'] as String?) ?? 'Standard';
+                    final foodAmt =
+                        (food['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                    await prefs.setString('food_type_limit', foodType);
+                    await prefs.setDouble('food_amt_limit', foodAmt);
+                    AppLogger.log(
+                      'MQTT: Saved food limits - Type: $foodType, Amount: $foodAmt',
+                    );
+                  }
+                  if (material is Map) {
+                    final materialType =
+                        (material['type'] as String?) ?? 'General';
+                    final materialAmt =
+                        (material['amt_limit'] as num?)?.toDouble() ?? 0.0;
+                    await prefs.setString('material_type_limit', materialType);
+                    await prefs.setDouble('material_amt_limit', materialAmt);
+                    AppLogger.log(
+                      'MQTT: Saved material limits - Type: $materialType, Amount: $materialAmt',
+                    );
+                  }
+                  if (travel is Map) {
+                    final travelRapido =
+                        (travel['rapido'] as num?)?.toDouble() ?? 0.0;
+                    final travelBus = (travel['bus'] as num?)?.toDouble() ?? 0.0;
+                    final travelOwnVehicle =
+                        (travel['own_vehicle'] as num?)?.toDouble() ?? 0.0;
+                    await prefs.setDouble('travel_rapido_limit', travelRapido);
+                    await prefs.setDouble('travel_bus_limit', travelBus);
+                    await prefs.setDouble(
+                      'travel_own_vehicle_limit',
+                      travelOwnVehicle,
+                    );
+                    AppLogger.log(
+                      'MQTT: Saved travel limits - Rapido: $travelRapido, Bus: $travelBus, Own Vehicle: $travelOwnVehicle',
+                    );
+                  }
+                  AppLogger.log('MQTT Sync: Expense limits updated successfully');
+                } catch (e) {
+                  AppLogger.log('MQTT ERROR: Failed to save expense limits - $e');
+                }
+                break;
+
+              default:
+                AppLogger.log(
+                  'MQTT Router: Unknown payload type received: $type',
+                );
+            }
+          } catch (e) {
+            AppLogger.log(
+              'MQTT Router Error: Failed to parse or save payload: $e',
+            );
+          }
         }
-      }
-    });
+      },
+      onError: (e) {
+        AppLogger.log('MQTT MASTER ERROR: $e');
+        _subscription?.cancel();
+      },
+    );
   }
 
   String? getMessageForTopic(String topic) {

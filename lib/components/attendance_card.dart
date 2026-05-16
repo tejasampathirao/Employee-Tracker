@@ -161,6 +161,10 @@ class _AttendanceCardState extends State<AttendanceCard>
           _publishGeofenceHeartbeat(position, mode, "Inside", radius);
         }
       },
+      onError: (e) {
+        AppLogger.log("GEOFENCE ERROR: $e");
+        _positionStream?.cancel();
+      },
     );
   }
 
@@ -202,7 +206,7 @@ class _AttendanceCardState extends State<AttendanceCard>
     int calculatedOT = otResult.dailyOTMinutes + otResult.doubleTimeMinutes;
 
     Duration worked = now.difference(_checkInTime!);
-    String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
+    String finalStatus = worked.inMinutes >= 480 ? 'Present' : 'Incomplete';
 
     // 2. Save and Stop OT
     await DatabaseHelper.instance.updateCheckOut(
@@ -631,31 +635,21 @@ class _AttendanceCardState extends State<AttendanceCard>
           BackgroundGeofenceService.stopMonitoring(); // Stop background service
 
           Duration worked = now.difference(_checkInTime!);
-          // DATABASE LOGIC: Explicitly save strings
-          String finalStatus = worked.inHours >= 9 ? 'Present' : 'Incomplete';
+          // Standardize: 8 hours (480 mins) threshold
+          String finalStatus = worked.inMinutes >= 480 ? 'Present' : 'Incomplete';
 
           final prefs = await SharedPreferences.getInstance();
-          final shiftEndTimeStr = prefs.getString('shift_to_time') ?? '17:00';
-          final otBuffer = prefs.getInt('ot_buffer') ?? 30;
+          final empId = prefs.getString('employee_id') ?? 'Unknown';
 
-          final endParts = shiftEndTimeStr.split(':');
-          final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
-          final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
-          final shiftEndTime = DateTime(
-            now.year,
-            now.month,
-            now.day,
-            shiftEndHour,
-            shiftEndMinute,
+          // Standardize: Use OvertimeCalculatorService for OT logic
+          final otResult = await OvertimeCalculatorService().calculateDailyOT(
+            _checkInTime!.toIso8601String(),
+            now.toIso8601String(),
+            await DatabaseHelper.instance.getAttendanceByEmployee(empId),
           );
 
-          int calculatedOT = 0;
-          if (now.isAfter(shiftEndTime)) {
-            final minutesPastShift = now.difference(shiftEndTime).inMinutes;
-            if (minutesPastShift >= otBuffer) {
-              calculatedOT = minutesPastShift;
-            }
-          }
+          // Consolidate OT: dailyOTMinutes + doubleTimeMinutes
+          final int calculatedOT = otResult.dailyOTMinutes + otResult.doubleTimeMinutes;
 
           await DatabaseHelper.instance.updateCheckOut(
             timeString,
@@ -670,8 +664,6 @@ class _AttendanceCardState extends State<AttendanceCard>
               accuracy: LocationAccuracy.high,
             ),
           );
-
-          final empId = prefs.getString('employee_id') ?? 'Unknown';
 
           // Publish to MQTT with Geofence details
           mqttService.publishGeofenceAttendance(
@@ -711,7 +703,7 @@ class _AttendanceCardState extends State<AttendanceCard>
                 content: Text(
                   finalStatus == 'Present'
                       ? 'Shift Completed: Present'
-                      : 'Checked out: Shift Incomplete (< 9hrs)',
+                      : 'Checked out: Shift Incomplete (< 8hrs)',
                 ),
                 backgroundColor: finalStatus == 'Present'
                     ? Colors.blue

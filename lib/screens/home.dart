@@ -4,6 +4,7 @@ import 'package:mqtt_client/mqtt_client.dart';
 import '../services/mqtt_handler.dart';
 import '../components/home_widgets.dart';
 import '../components/attendance_history_view.dart';
+import '../utils/app_logger.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -28,35 +29,41 @@ class _HomePageState extends State<HomePage> {
     await mqttClient.connect();
     
     // Listen to MQTT messages to update UI in real-time
-    _mqttSubscription = mqttClient.updates?.listen((messages) {
-      if (mounted && messages.isNotEmpty) {
-        for (final message in messages) {
-          final String topic = message.topic;
-          final MqttPublishMessage recMess = message.payload as MqttPublishMessage;
-          final String content = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+    _mqttSubscription = mqttClient.updates?.listen(
+      (messages) {
+        if (mounted && messages.isNotEmpty) {
+          for (final message in messages) {
+            final String topic = message.topic;
+            final MqttPublishMessage recMess = message.payload as MqttPublishMessage;
+            final String content = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
 
-          // Visual Feedback for Closed-Loop Test
-          if (topic == 'hr/leaves') {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('MQTT RECEIVED: $content'),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          } else if (topic == '/expenses/updates' || topic == 'employee/tracker') {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('MQTT Update ($topic): $content'),
-                backgroundColor: Colors.blue,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            // Visual Feedback for Closed-Loop Test
+            if (topic == 'hr/leaves') {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('MQTT RECEIVED: $content'),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            } else if (topic == '/expenses/updates' || topic == 'employee/tracker') {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('MQTT Update ($topic): $content'),
+                  backgroundColor: Colors.blue,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
           }
+          setState(() {}); // Refresh dashboard on any message
         }
-        setState(() {}); // Refresh dashboard on any message
-      }
-    });
+      },
+      onError: (e) {
+        AppLogger.log("HOME MQTT ERROR: $e");
+        _mqttSubscription?.cancel();
+      },
+    );
   }
 
   @override

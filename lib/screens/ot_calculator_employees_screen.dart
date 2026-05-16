@@ -63,7 +63,7 @@ class _OTCalculatorEmployeesScreenState extends State<OTCalculatorEmployeesScree
     final now = DateTime.now();
     final monthYear = DateFormat('yyyy-MM').format(now);
     
-    // Fetch stats from DB
+    // Fetch stats from DB using the standardized OT columns
     final approvedExpenses = await DatabaseHelper.instance.getActualMonthlyExpenseTotal(empId, monthYear);
     final stats = await DatabaseHelper.instance.getEmployeeOTStats(empId);
     final baseSalaryFromDb = await DatabaseHelper.instance.getEmployeeSalary(empId);
@@ -80,6 +80,7 @@ class _OTCalculatorEmployeesScreenState extends State<OTCalculatorEmployeesScree
 
     if (mounted) {
       setState(() {
+        // Direct assignment from DB sum (Already standardized in DBHelper)
         _otWeeklyMins = stats['weeklyOTMinutes'] ?? 0;
         _otMonthlyMins = stats['monthlyOTMinutes'] ?? 0;
         

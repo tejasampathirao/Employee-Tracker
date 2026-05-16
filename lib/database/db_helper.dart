@@ -23,7 +23,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 28, // Bumped to 28 to add start_date and end_date to holidays
+      version: 30, // Increment version to 30
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,6 +32,20 @@ class DatabaseHelper {
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Force creation of tables if they are missing
     await _createTables(db);
+
+    if (oldVersion < 30) {
+      try {
+        // Ensure ot_minutes column exists (safety upgrade)
+        await db.execute(
+          'ALTER TABLE attendance ADD COLUMN ot_minutes INTEGER DEFAULT 0',
+        );
+        debugPrint("DB: Added ot_minutes column to attendance table.");
+      } catch (e) {
+        debugPrint(
+          "Note: attendance ot_minutes column already exists or error: $e",
+        );
+      }
+    }
 
     if (oldVersion < 28) {
       try {
@@ -400,6 +414,7 @@ class DatabaseHelper {
       'longitude': payload['location']?['lng'],
       'status': payload['status'] ?? 'Checked-In',
       'type': 'Office',
+      'ot_minutes': payload['ot_minutes'] ?? 0,
     });
   }
 
@@ -418,12 +433,9 @@ class DatabaseHelper {
   Future<int> insertHoliday(Map<String, dynamic> payload) async {
     final db = await instance.database;
     return await db.insert('holidays', {
-      'date': (payload['start_date'] ?? payload['date'] as String).split(
-        'T',
-      )[0],
-      'start_date': payload['start_date'],
-      'end_date': payload['end_date'],
-      'name': payload['reason'] ?? 'Company Holiday',
+      'date': (payload['date']?.toString() ?? DateTime.now().toIso8601String())
+          .split('T')[0],
+      'name': payload['name']?.toString() ?? 'Company Holiday',
       'is_recurring': 0,
     });
   }
@@ -715,8 +727,7 @@ class DatabaseHelper {
     );
 
     if (result.isNotEmpty && result.first['total_ot'] != null) {
-      final int totalMinutes = result.first['total_ot'] as int;
-      return totalMinutes / 60.0;
+      return (result.first['total_ot'] as num).toDouble();
     }
     return 0.0;
   }
@@ -1611,66 +1622,36 @@ class DatabaseHelper {
   Future<Map<String, dynamic>> getEmployeeOTStats(String employeeId) async {
     final db = await instance.database;
     final now = DateTime.now();
-    final prefs = await SharedPreferences.getInstance();
-    final shiftEndStr = prefs.getString('shift_to_time') ?? '17:00';
-    final otBufferMins = prefs.getInt('ot_buffer') ?? 25;
-    final endParts = shiftEndStr.split(':');
-    final shiftEndHour = int.tryParse(endParts[0]) ?? 17;
-    final shiftEndMinute = int.tryParse(endParts[1]) ?? 0;
 
-    // 1. Current Week OT
+    // 1. Current Week OT (Summing ot_minutes column)
     final weekStart = now.subtract(Duration(days: now.weekday - 1));
     final weekStartStr = DateFormat('yyyy-MM-dd').format(weekStart);
 
-    final weeklyRecords = await db.query(
-      'attendance',
-      where: 'employee_id = ? AND date >= ? AND checkOutTime IS NOT NULL',
-      whereArgs: [employeeId, weekStartStr],
+    final weeklyResult = await db.rawQuery(
+      'SELECT SUM(ot_minutes) as total_ot FROM attendance WHERE employee_id = ? AND date >= ?',
+      [employeeId, weekStartStr],
     );
 
-    // 2. Current Month OT
+    // 2. Current Month OT (Summing ot_minutes column)
     final monthStartStr = "${DateFormat('yyyy-MM').format(now)}-01";
-    final monthlyRecords = await db.query(
-      'attendance',
-      where: 'employee_id = ? AND date >= ? AND checkOutTime IS NOT NULL',
-      whereArgs: [employeeId, monthStartStr],
+    final monthlyResult = await db.rawQuery(
+      'SELECT SUM(ot_minutes) as total_ot FROM attendance WHERE employee_id = ? AND date >= ?',
+      [employeeId, monthStartStr],
     );
 
-    int calculateTotalOT(List<Map<String, dynamic>> records) {
-      int totalMinutes = 0;
-      for (var record in records) {
-        final checkOutStr = record['checkOutTime'] as String?;
-        final checkInStr = record['checkInTime'] as String?;
-        if (checkOutStr != null && checkInStr != null) {
-          try {
-            final checkIn = DateTime.parse(checkInStr);
-            final checkOut = DateTime.parse(checkOutStr);
-            final shiftEnd = DateTime(
-              checkOut.year,
-              checkOut.month,
-              checkOut.day,
-              shiftEndHour,
-              shiftEndMinute,
-            );
+    int weeklyOT = 0;
+    if (weeklyResult.isNotEmpty && weeklyResult.first['total_ot'] != null) {
+      weeklyOT = (weeklyResult.first['total_ot'] as num).toInt();
+    }
 
-            if (checkOut.isAfter(shiftEnd)) {
-              final otStartTime = checkIn.isAfter(shiftEnd) ? checkIn : shiftEnd;
-              final extraMinutes = checkOut.difference(otStartTime).inMinutes;
-              if (extraMinutes >= otBufferMins) {
-                totalMinutes += extraMinutes - otBufferMins;
-              }
-            }
-          } catch (e) {
-            debugPrint("Error parsing checkOutTime for OT stats: $e");
-          }
-        }
-      }
-      return totalMinutes;
+    int monthlyOT = 0;
+    if (monthlyResult.isNotEmpty && monthlyResult.first['total_ot'] != null) {
+      monthlyOT = (monthlyResult.first['total_ot'] as num).toInt();
     }
 
     return {
-      'weeklyOTMinutes': calculateTotalOT(weeklyRecords),
-      'monthlyOTMinutes': calculateTotalOT(monthlyRecords),
+      'weeklyOTMinutes': weeklyOT,
+      'monthlyOTMinutes': monthlyOT,
     };
   }
 
@@ -1766,6 +1747,23 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<void> syncHolidays(List<dynamic> holidayList) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.delete('holidays');
+      for (var holiday in holidayList) {
+        await txn.insert('holidays', {
+          'date': holiday['date'],
+          'name': holiday['name'],
+          'is_recurring': holiday['is_recurring'] ?? 0,
+          'start_date': holiday['start_date'],
+          'end_date': holiday['end_date'],
+        });
+      }
+    });
+    debugPrint("DB: Holidays synced with Admin list.");
   }
 
   // --- Shift Settings Methods ---
